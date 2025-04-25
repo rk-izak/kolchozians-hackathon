@@ -4,6 +4,8 @@ import asyncio
 
 class DebateInput(BaseModel):
     debate_input: str
+    move_from: str
+    move_to: str
 
 class ChessPiece:
     def __init__(self, model, piece_name):

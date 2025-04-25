@@ -4,6 +4,8 @@ import asyncio
 
 class KingState(BaseModel):
     decision: str
+    move_from: str
+    move_to: str
     reasoning: str
 
 class KingPiece:
