@@ -8,8 +8,9 @@ css = """
     font-size: 48px !important;
     padding: 0 !important;
 }
-.figure-img {
+.figure-img textarea {
     font-size: 128px !important;
+    text-align: center;
 }
 """
 
@@ -29,12 +30,14 @@ def make_board(board, thinking_img, thinking):
 
 with gr.Blocks(css=css) as demo:
     gr.Markdown("### Prompt Chess")
-    clicked = gr.Textbox(label="Clicked Square (row,col)", interactive=False)
+    clicked = gr.Textbox(label="Prompt", interactive=False)
     with gr.Row():
         with gr.Column(scale=1):
             with gr.Row():
-                thinking_img = gr.Textbox(label="Figure", elem_classes=["figure-img"])
-                thinking = gr.Textbox(label="Thinking...", interactive=False, elem_classes=["figure-img"])
+                with gr.Column(scale=0):
+                    thinking_img = gr.Textbox(label="Figure", interactive=False, elem_classes=["figure-img"])
+                with gr.Column(scale=1):
+                    thinking = gr.Textbox(label="Thinking...", interactive=False)
         with gr.Column(min_width=760, scale=0):
             make_board(Board(), thinking_img, thinking)
 
