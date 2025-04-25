@@ -12,7 +12,3 @@ Your reasoning should prioritize:
 4.  Exploring creative and unconventional ideas, even if slightly unsound.
 
 Explain your reasoning clearly, focusing on the surprise value, creativity, or complexity your proposed move introduces.
-
-Format your response as follows:
-Proposed Move: [Your Move]
-Reasoning: [Your detailed reasoning focusing on creativity, surprise, and unconventional play] 

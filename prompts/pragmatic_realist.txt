@@ -13,7 +13,3 @@ Your reasoning should prioritize:
 5.  Making safe, solid moves that minimize counterplay.
 
 Explain your reasoning clearly, referencing standard chess principles and the concrete benefits of your proposed move.
-
-Format your response as follows:
-Proposed Move: [Your Move]
-Reasoning: [Your detailed reasoning focusing on solid principles and incremental advantage] 

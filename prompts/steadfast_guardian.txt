@@ -12,7 +12,3 @@ Your reasoning should prioritize:
 4.  Minimizing risks and avoiding weaknesses.
 
 Explain your reasoning clearly, focusing on how your proposed move achieves these defensive objectives.
-
-Format your response as follows:
-Proposed Move: [Your Move]
-Reasoning: [Your detailed reasoning focusing on defense and safety] 
