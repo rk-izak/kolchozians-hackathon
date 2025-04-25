@@ -20,7 +20,7 @@ class UserPromptChecker:
 
         )
     
-    async def input_guardrail(ctx, agent, input_data):
+    async def input_guardrail(self, ctx, input_data):
         result = await Runner.run(self.prompt_guard_agent, input_data, context=ctx.context)
         final_output = result.final_output_as(UserInput)
         return GuardrailFunctionOutput(
