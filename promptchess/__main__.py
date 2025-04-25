@@ -1,4 +1,5 @@
 import gradio as gr
+from functools import partial
 
 from .chessboard import ChessBoard
 from .visualize import visualize
@@ -16,38 +17,86 @@ CSS = """
 }
 """
 
+def random_move(board):
+    moves = board.get_legal_moves()
+    board.apply_move(moves[0])
 
-def make_board(board, thinking_img, thinking):
-    with gr.Row():
+    updates = []
+    for r in range(8):
+        for c in range(7, -1, -1):
+            piece = board.piece_at(c, r)
+            
+            check_active = False
+            if piece is not None:
+                if board.get_turn() == 'white':
+                    check_active = piece.isupper()
+                else:
+                    check_active = piece.islower()
+            
+            updates.append(
+                gr.update(
+                    value=visualize(piece),
+                    interactive=check_active
+                )
+            )
+    updates.append(board.get_turn())
+    return updates
+
+def change_prompt(row, col, board):
+    return [visualize(board.piece_at(7-col, row)), "PROMPT"]
+
+def make_board(board, prompt_img, prompt):
+    buttons = []
+    with gr.Row() as chess_board:
         for col in range(8):
             with gr.Column(min_width=70, scale=0): 
-                for row in range(8):
+                for row in range(7, -1, -1):
                     piece = board.piece_at(row, col)
-                    gr.Button(
+                    b = gr.Button(
                         value=visualize(piece),
+                        interactive=piece is not None and piece.isupper(),
                         elem_classes=["cell-button"]
-                    ).click(
-                        fn=lambda r=row, c=col: (visualize(board.piece_at(r, c)), "description"),
-                        outputs=(thinking_img, thinking)
                     )
+                    buttons.append(b)
+
+    for idx, btn in enumerate(buttons):
+        r, c = divmod(idx, 8)
+        btn.click(
+            fn=partial(change_prompt, r, c),
+            inputs=gr.State(board),
+            outputs=[prompt_img, prompt],
+            queue=False,
+        )
+    return buttons
 
 
 def main():
     board = ChessBoard()
-    # board = chess.Board()
-    # print(board)
+
     with gr.Blocks(css=CSS) as demo:
         gr.Markdown("### Prompt Chess")
-        clicked = gr.Textbox(label="Prompt", interactive=False)
+        with gr.Row():
+            with gr.Column(scale=0):
+                turn = gr.Textbox(label="Turn", value=board.get_turn(), interactive=False)
+            with gr.Column(scale=1):
+                clicked = gr.Textbox(label="Prompt", interactive=False)
         with gr.Row():
             with gr.Column(scale=1):
                 with gr.Row():
                     with gr.Column(scale=0):
-                        thinking_img = gr.Textbox(label="Figure", interactive=False, elem_classes=["figure-img"])
+                        prompt_img = gr.Textbox(label="Figure", interactive=False, elem_classes=["figure-img"])
                     with gr.Column(scale=1):
-                        thinking = gr.Textbox(label="Thinking...", interactive=False)
+                        prompt = gr.Textbox(label="Thinking...", interactive=True)
+                    with gr.Column(scale=0):
+                        move = gr.Button(value="Make move")
             with gr.Column(min_width=760, scale=0):
-                make_board(board, thinking_img, thinking)
+                chess_board = make_board(board, prompt_img, prompt)
+                move.click(
+                    fn=random_move,
+                    inputs=gr.State(board),
+                    outputs=chess_board + [turn],
+                    queue=False,
+                )
     demo.launch()
 
 
