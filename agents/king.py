@@ -9,7 +9,7 @@ class KingState(BaseModel):
     reasoning: str
 
 class KingPiece:
-    def __init__(self,):
+    def __init__(self, model):
         self.prompt = (
             "You are a King Piece in a game of Chess. "
             "Your task is to decide on a legal chess move based on current board state and recommendations from other chess pieces. "
@@ -18,7 +18,7 @@ class KingPiece:
 
         self.agent = Agent(
             name="King Piece",
-            model="gpt-4.1",
+            model=model,
             instructions=self.prompt,
             output_type=KingState
         )
@@ -28,7 +28,7 @@ class KingPiece:
         return result
 
 async def main():
-    king = KingPiece()
+    king = KingPiece(model='gpt-4.1')
     result = await king.call("We should move forward", "Test")
     # print(result)
     return result.final_output
