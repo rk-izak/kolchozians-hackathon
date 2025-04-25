@@ -6,14 +6,9 @@ class DebateInput(BaseModel):
     debate_input: str
 
 
-class ChessFaction:
+class ChessFraction:
     def __init__(self, model, piece_name, colour, user_prompt=''):
-        self.prompt = (
-            f'You are a in control of {colour} {piece_name} Faction in a game of Chess. '
-            'Therefore, as their lord, you manage and are responsible for all of them.'
-            f'{user_prompt}'
-            'You report directly to the King Piece. Provide a useful suggestion in 2-3 sentences. '
-        )
+        self.update_prompt(colour, piece_name, user_prompt)
 
         self.agent = Agent(
             name=piece_name,
@@ -22,9 +17,19 @@ class ChessFaction:
             output_type=DebateInput,
         )
 
+    def update_prompt(self, colour, piece_name, user_prompt):
+        self.user_prompt = user_prompt
+        self.prompt = (
+            f'You are a in control of {colour} {piece_name} Faction in a game of Chess. '
+            'Therefore, as their lord, you manage and are responsible for all of them.'
+            f'{user_prompt}'
+            'You report directly to the King Piece. Provide a useful suggestion in 2-3 sentences. '
+        )
+
     async def call(
         self,
         board_state: str,
-    ):
-        result = await Runner.run(self.agent, f'\nBoard State: {board_state}')
-        return result
+    ) -> DebateInput:
+        run_result = await Runner.run(self.agent, f'\nBoard State: {board_state}')
+        final_output = run_result.final_output_as(DebateInput)
+        return final_output

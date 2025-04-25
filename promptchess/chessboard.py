@@ -2,6 +2,15 @@ import chess
 
 from .utils import log_error, log_info, log_warning
 
+# Map lowercase piece names to python-chess piece types for internal use
+_PIECE_TYPE_MAP_CB = {
+    'pawn': chess.PAWN,
+    'knight': chess.KNIGHT,
+    'bishop': chess.BISHOP,
+    'rook': chess.ROOK,
+    'queen': chess.QUEEN,
+    # King is usually assumed active if game is not over, excluded here
+}
 
 class ChessBoard:
     """
@@ -71,7 +80,7 @@ class ChessBoard:
         """Returns a dictionary describing the current game status."""
         status = {
             'is_game_over': self._board.is_game_over(),
-            'result': self._board.result(),
+            'result': self._board.result() if self._board.is_game_over() else None,
             'is_checkmate': self._board.is_checkmate(),
             'is_stalemate': self._board.is_stalemate(),
             'is_insufficient_material': self._board.is_insufficient_material(),
@@ -87,6 +96,8 @@ class ChessBoard:
                 status['winner'] = 'white'
             elif result == '0-1':
                 status['winner'] = 'black'
+            elif result == '1/2-1/2':
+                 status['winner'] = 'draw' # Explicitly state draw
 
         return status
 
@@ -98,6 +109,22 @@ class ChessBoard:
         """Returns whose turn it is ('white' or 'black')."""
         return 'white' if self._board.turn == chess.WHITE else 'black'
 
+    def get_active_pieces(self) -> dict[str, dict[str, bool]]:
+        """
+        Checks the board for the presence of standard piece types (excluding King)
+        for both white and black.
+
+        Returns:
+            A dictionary indicating activity: e.g.,
+            {'white': {'pawn': True, 'knight': False, ...}, 'black': {...}}
+        """
+        active_status = {'white': {}, 'black': {}}
+        for color_name, color_const in {'white': chess.WHITE, 'black': chess.BLACK}.items():
+            for piece_key, piece_const in _PIECE_TYPE_MAP_CB.items():
+                pieces_on_board = self._board.pieces(piece_const, color_const)
+                active_status[color_name][piece_key] = bool(pieces_on_board)
+        return active_status
+
     def __str__(self) -> str:
         """Returns a simple string representation of the board."""
         return str(self._board)
@@ -107,7 +134,9 @@ class ChessBoard:
         print(self._board)
 
     def piece_at(self, row, col) -> str | None:
-        piece = self._board.piece_at(chess.square(col, row))
-        if piece is not None:
-            return str(piece)
-        return None
+        # Ensure row/col are 0-indexed for internal use if needed,
+        # or adjust if they are expected as 1-8/a-h.
+        # Assuming 0-indexed row, 0-indexed col (a=0, h=7)
+        square_index = chess.square(col, row)
+        piece = self._board.piece_at(square_index)
+        return str(piece) if piece else None
