@@ -1,0 +1,29 @@
+
+def visualize(name):
+    match name:
+        case 'p':
+            return '♟'
+        case 'P':
+            return '♙'
+        case 'r':
+            return '♜'
+        case 'R':
+            return '♖'
+        case 'b':
+            return '♝'
+        case 'B':
+            return '♗'
+        case 'q':
+            return '♛'
+        case 'Q':
+            return '♕'
+        case 'k':
+            return '♚'
+        case 'K':
+            return '♔'
+        case 'n':
+            return '♞'
+        case 'N':
+            return '♘'
+        case _:
+            return ''
