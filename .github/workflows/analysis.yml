@@ -1,0 +1,88 @@
+name: Python code analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  run-pylint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-root
+          poetry self add poetry-exec-plugin
+      - name: Run pylint
+        run: poetry exec pylint
+
+  run-ruff-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-root
+          poetry self add poetry-exec-plugin
+      - name: Run ruff check
+        run: poetry exec ruff-check
+  
+  run-ruff-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-root
+          poetry self add poetry-exec-plugin
+      - name: Run ruff format
+        run: poetry exec ruff-format
+
+  run-mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-root
+          poetry self add poetry-exec-plugin
+      - name: Run mypy
+        run: poetry exec mypy
