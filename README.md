@@ -1,2 +1,2 @@
 # kolchozians-hackathon
-Applied Piwo Solutions
+Applied Piwo Solutions -> Let's Rumble
