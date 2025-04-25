@@ -9,6 +9,7 @@ readme = "README.md"
 python = "^3.12"
 chess = "^1.11.2"
 gradio = "^5.27.0"
+coloredlogs = "^15.0.1"
 
 [tool.poetry-exec-plugin.commands]
 mypy = "mypy --ignore-missing-imports promptchess"
