@@ -162,6 +162,7 @@ class GameState:
         """
         current_turn = self.get_current_turn()
         board_fen = self.get_board_state()
+        board_2d = self.board.get_board_2d_string() # Get 2D board string
         suggestions = {}
 
         log_info(f"Getting suggestions for active {current_turn} fractions...")
@@ -173,7 +174,8 @@ class GameState:
                 active_fraction_count += 1
                 fraction_agent = fraction_data['agent']
                 try:
-                    result = await fraction_agent.call(board_fen)
+                    # Pass both FEN and 2D board string
+                    result = await fraction_agent.call(board_fen, board_2d)
                     suggestions[piece_key] = result.debate_input
                     log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
                 except Exception as e:
@@ -210,6 +212,7 @@ class GameState:
 
         # 3. Get board state and legal moves
         board_fen = self.get_board_state()
+        board_2d = self.board.get_board_2d_string() # Get 2D board string
         legal_moves = self.get_legal_moves()
         if not legal_moves:
              log_warning(f"No legal moves available for {current_turn}. Cannot decide move.")
@@ -218,7 +221,8 @@ class GameState:
         # 4. Call the King agent
         king_agent = self.kings[current_turn]
         try:
-            king_decision = await king_agent.call(debate, board_fen, legal_moves)
+            # Pass both FEN and 2D board string to King agent
+            king_decision = await king_agent.call(debate, board_fen, board_2d, legal_moves)
             chosen_move = king_decision.move
             log_info(f"{current_turn} King chose move: {chosen_move} (Reasoning: {king_decision.reasoning})")
 
@@ -321,4 +325,6 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+    import logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     asyncio.run(main())

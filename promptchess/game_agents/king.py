@@ -19,10 +19,15 @@ class KingPiece:
             name='King Piece', model=model, instructions=self.prompt, output_type=KingState
         )
 
-    async def call(self, debate: str, board_state: str, legal_moves: list[str]):
+    async def call(self, debate: str, board_fen: str, board_2d: str, legal_moves: list[str]):
+        agent_input = (
+            f'\nFaction Statements:\n{debate}'
+            f'\n\nCurrent Board State:\nFEN: {board_fen}\n\n{board_2d}'
+            f'\n\nAvailable Moves:\n*{"\n*".join(legal_moves)}'
+        )
         run_result = await Runner.run(
             self.agent,
-            f'\nFaction Statements: {debate}\nBoard State: {board_state}\nAvailable Moves: \n*{"\n*".join(legal_moves)}',
+            agent_input,
         )
         final_output = run_result.final_output_as(KingState)
         return final_output

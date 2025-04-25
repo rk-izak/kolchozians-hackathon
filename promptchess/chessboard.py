@@ -125,6 +125,11 @@ class ChessBoard:
                 active_status[color_name][piece_key] = bool(pieces_on_board)
         return active_status
 
+    def get_board_2d_string(self) -> str:
+        """Returns a standard 2D string representation of the board."""
+        # The __str__ method of chess.Board provides this
+        return str(self._board)
+
     def __str__(self) -> str:
         """Returns a simple string representation of the board."""
         return str(self._board)

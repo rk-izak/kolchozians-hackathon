@@ -28,8 +28,10 @@ class ChessFraction:
 
     async def call(
         self,
-        board_state: str,
+        board_fen: str,
+        board_2d: str
     ) -> DebateInput:
-        run_result = await Runner.run(self.agent, f'\nBoard State: {board_state}')
+        agent_input = f'\nCurrent Board State:\nFEN: {board_fen}\n\n{board_2d}'
+        run_result = await Runner.run(self.agent, agent_input)
         final_output = run_result.final_output_as(DebateInput)
         return final_output
