@@ -1,5 +1,9 @@
+import chess
+
+
 def main():
-    print("Hello, chess!")
+    board = chess.Board()
+    print(board)
 
 
 if __name__ == "__main__":
