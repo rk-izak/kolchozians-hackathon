@@ -67,7 +67,7 @@ class ChessBoard:
             log_error(error_message)
             return False, error_message
 
-    def get_status(self) -> dict[str, bool | str | None]:
+    def get_status(self) -> dict[str, object]:
         """Returns a dictionary describing the current game status."""
         status = {
             'is_game_over': self._board.is_game_over(),
