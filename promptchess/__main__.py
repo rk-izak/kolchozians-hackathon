@@ -2,6 +2,7 @@ import gradio as gr
 from functools import partial
 
 from .chessboard import ChessBoard
+from .game_state import GameState
 from .visualize import visualize
 
 CSS = """
@@ -42,16 +43,16 @@ def random_move(board):
     updates.append(board.get_turn())
     return updates
 
-def change_prompt(row, col, board):
-    return [visualize(board.piece_at(7-col, row)), "PROMPT"]
+def change_prompt(row, col, game):
+    return [visualize(game.board.piece_at(7-col, row)), "PROMPT"]
 
-def make_board(board, prompt_img, prompt):
+def make_board(game, prompt_img, prompt):
     buttons = []
     with gr.Row() as chess_board:
         for col in range(8):
             with gr.Column(min_width=70, scale=0): 
                 for row in range(7, -1, -1):
-                    piece = board.piece_at(row, col)
+                    piece = game.board.piece_at(row, col)
                     b = gr.Button(
                         value=visualize(piece),
                         interactive=piece is not None and piece.isupper(),
@@ -63,7 +64,7 @@ def make_board(board, prompt_img, prompt):
         r, c = divmod(idx, 8)
         btn.click(
             fn=partial(change_prompt, r, c),
-            inputs=gr.State(board),
+            inputs=gr.State(game),
             outputs=[prompt_img, prompt],
             queue=False,
         )
@@ -71,13 +72,13 @@ def make_board(board, prompt_img, prompt):
 
 
 def main():
-    board = ChessBoard()
+    game = GameState()
 
     with gr.Blocks(css=CSS) as demo:
         gr.Markdown("### Prompt Chess")
         with gr.Row():
             with gr.Column(scale=0):
-                turn = gr.Textbox(label="Turn", value=board.get_turn(), interactive=False)
+                turn = gr.Textbox(label="Turn", value=game.board.get_turn(), interactive=False)
             with gr.Column(scale=1):
                 clicked = gr.Textbox(label="Prompt", interactive=False)
         with gr.Row():
@@ -90,10 +91,10 @@ def main():
                     with gr.Column(scale=0):
                         move = gr.Button(value="Make move")
             with gr.Column(min_width=760, scale=0):
-                chess_board = make_board(board, prompt_img, prompt)
+                chess_board = make_board(game, prompt_img, prompt)
                 move.click(
                     fn=random_move,
-                    inputs=gr.State(board),
+                    inputs=gr.State(game.board),
                     outputs=chess_board + [turn],
                     queue=False,
                 )
