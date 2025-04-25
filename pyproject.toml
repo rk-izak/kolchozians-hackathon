@@ -14,7 +14,7 @@ coloredlogs = "^15.0.1"
 [tool.poetry-exec-plugin.commands]
 mypy = "mypy --ignore-missing-imports promptchess"
 pylint = "pylint --rcfile pyproject.toml promptchess"
-ruff-format = "ruff format promptchess"
+ruff-format = "ruff format --check promptchess"
 ruff-check = "ruff check promptchess"
 
 [tool.poetry.group.dev.dependencies]
