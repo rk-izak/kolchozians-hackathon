@@ -105,3 +105,9 @@ class ChessBoard:
     def print_board(self) -> None:
         """Prints the board to the console."""
         print(self._board)
+
+    def piece_at(self, row, col) -> str | None:
+        piece = self._board.piece_at(chess.square(col, row))
+        if piece is not None:
+            return str(piece)
+        return None

@@ -1,7 +1,7 @@
 import gradio as gr
 
-from .logic import Board
-
+from .chessboard import ChessBoard
+from .visualize import visualize
 
 CSS = """
 .cell-button {
@@ -22,18 +22,18 @@ def make_board(board, thinking_img, thinking):
         for col in range(8):
             with gr.Column(min_width=70, scale=0): 
                 for row in range(8):
-                    piece = board.board[row][col].visualize()
+                    piece = board.piece_at(row, col)
                     gr.Button(
-                        value=piece,
+                        value=visualize(piece),
                         elem_classes=["cell-button"]
                     ).click(
-                        fn=lambda r=row, c=col: (board.board[r][c].visualize(), board.board[r][c].description),
+                        fn=lambda r=row, c=col: (visualize(board.piece_at(r, c)), "description"),
                         outputs=(thinking_img, thinking)
                     )
 
 
 def main():
-    board = Board()
+    board = ChessBoard()
     # board = chess.Board()
     # print(board)
     with gr.Blocks(css=CSS) as demo:
