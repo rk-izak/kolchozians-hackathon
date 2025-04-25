@@ -123,10 +123,8 @@ class GameState:
             log_warning("Cannot update prompt for King fraction; use King agent methods if needed.")
             return False
         if color in self.fractions and piece_key in self.fractions[color]:
-            # Access the agent within the stored dictionary
             fraction_agent = self.fractions[color][piece_key]['agent']
             try:
-                # Assuming update_prompt modifies the agent internally
                 fraction_agent.update_prompt(color, piece_name.capitalize(), new_prompt)
                 log_info(f"Updated prompt for {color} {piece_name} fraction.")
                 return True
@@ -136,6 +134,29 @@ class GameState:
         else:
             log_warning(f"Fraction {color} {piece_name} not found for prompt update.")
             return False
+
+    def get_fraction_user_prompt(self, color: str, piece_name: str) -> str | None:
+        """
+        Retrieves the current user_prompt for a specific fraction.
+
+        Args:
+            color: The color of the fraction ('white' or 'black').
+            piece_name: The name of the piece type (e.g., 'pawn', 'knight').
+
+        Returns:
+            The current user_prompt string, or None if the fraction is not found.
+        """
+        piece_key = piece_name.lower()
+        if piece_key == 'king':
+            log_warning("King piece does not have a standard user prompt in this structure.")
+            return None
+
+        if color in self.fractions and piece_key in self.fractions[color]:
+            fraction_agent = self.fractions[color][piece_key]['agent']
+            return fraction_agent.user_prompt
+        else:
+            log_warning(f"Fraction {color} {piece_name} not found.")
+            return None
 
     def get_board_state(self) -> str:
         """Returns the current board state in FEN notation."""
@@ -167,14 +188,11 @@ class GameState:
 
         log_info(f"Getting suggestions for active {current_turn} fractions...")
         active_fraction_count = 0
-        # Iterate through the fraction data for the current player
         for piece_key, fraction_data in self.fractions[current_turn].items():
-            # Only query active fractions
             if fraction_data['is_active']:
                 active_fraction_count += 1
                 fraction_agent = fraction_data['agent']
                 try:
-                    # Pass both FEN and 2D board string
                     result = await fraction_agent.call(board_fen, board_2d)
                     suggestions[piece_key] = result.debate_input
                     log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
