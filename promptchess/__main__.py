@@ -1,9 +1,12 @@
 import gradio as gr
 from functools import partial
-import asyncio # *** ADDED for sleep ***
+import asyncio
+import logging  # *** ADDED logging import ***
 
 # *** Import JesterState for type hints if needed, and GameState components ***
 from .game_state import GameState, SHORT_PIECE_MAP, JesterState # Assuming JesterState is needed
+# *** Assuming log_info/log_warning are in utils, import them if needed directly in UI ***
+# from .utils import log_info # Example if you needed logging directly here
 
 PIECES = {
     'p': '♟', 'r': '♜', 'b': '♝',
@@ -75,6 +78,10 @@ button.cell:disabled,
 
 GAME = GameState()
 
+# --- Functions (get_cell_properties, make_move, choose_piece, save_prompt, make_board_layout) ---
+# (Keep the existing functions as they were in the previous corrected version)
+# ... (Previous functions go here) ...
+
 def get_cell_properties(rank: int, file: int, piece: str | None, selected_square: tuple[int, int] | None = None) -> dict:
     """ Gets Gradio Button properties based on board state and selection """
     square = (rank, file)
@@ -112,6 +119,7 @@ async def make_move(current_selected_piece_state):
     Handles the full move cycle: get suggestions, king decides, apply move, evaluate, get jester comment.
     Yields UI updates throughout the process.
     """
+    # (Code from previous version)
     thinking_text = ""
     move_san = None
     jester_state = None
@@ -162,6 +170,7 @@ async def make_move(current_selected_piece_state):
 
     if not move_san:
         thinking_text += "\n**Error: Could not decide on a move.**"
+        logging.error("Failed to decide on a move in make_move.") # Add direct log
         yield final_board_updates + [final_turn_update, gr.update(value=thinking_text), final_eval_update, jester_text_update, jester_timer_update]
         return # Stop processing
 
@@ -173,12 +182,14 @@ async def make_move(current_selected_piece_state):
 
     if not success:
         thinking_text += f"\n**Error applying move {move_san}: {message}**"
+        logging.error(f"Failed to apply move {move_san}: {message}") # Add direct log
         # Keep board as is, update thinking text
         yield final_board_updates + [final_turn_update, gr.update(value=thinking_text), final_eval_update, jester_text_update, jester_timer_update]
         return # Stop processing
 
     # --- Post-Move Updates (Board, Turn, Eval, Jester) ---
     thinking_text += f"\nMove {move_san} successful."
+    logging.info(f"Move {move_san} applied via UI.") # Add direct log
 
     # Get final board state
     final_board_updates = []
@@ -228,8 +239,7 @@ async def make_move(current_selected_piece_state):
 
 def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
     """ Handles user clicking on a piece to select it for prompting. """
-    # Map Gradio grid (row 0-7 top-down, col 0-7 left-right)
-    # to python-chess coordinates (rank 7-0, file 0-7)
+    # (Code from previous version)
     chess_rank = 7 - row
     chess_file = col
     selected_square = (chess_rank, chess_file)
@@ -237,13 +247,14 @@ def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
     piece_symbol = GAME.board.piece_at_coords(chess_file, chess_rank) # Get piece char ('P', 'n', etc.)
 
     if piece_symbol is None: # Clicked empty square
-         log_warning("Clicked empty square, cannot select for prompt.")
+         # Use logging instead of print/log_warning if available
+         logging.info("Clicked empty square, cannot select for prompt.")
          # Just return updates to redraw board without selection
          updates = []
-         for r in range(8):
-             for f in range(8):
-                 cr = 7 - r
-                 cf = f
+         for r_idx in range(8):
+             for f_idx in range(8):
+                 cr = 7 - r_idx
+                 cf = f_idx
                  p = GAME.board.piece_at_coords(cf, cr)
                  updates.append(
                      gr.update(**get_cell_properties(cr, cf, p, selected_square=None))
@@ -254,7 +265,7 @@ def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
 
     piece_name_key = piece_symbol.lower()
     if piece_name_key not in SHORT_PIECE_MAP:
-        log_error(f"Invalid piece symbol '{piece_symbol}' at {chess_file},{chess_rank}")
+        logging.error(f"Invalid piece symbol '{piece_symbol}' at {chess_file},{chess_rank}")
         return [current_selected_piece_state, gr.update(), gr.update()] # Should not happen
 
     piece_name = SHORT_PIECE_MAP[piece_name_key] # 'pawn', 'knight', etc.
@@ -266,21 +277,21 @@ def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
                  (not is_white_turn and piece_symbol.islower())
 
     if not can_select:
-        log_warning(f"Cannot select opponent's piece ({piece_symbol}) on {turn}'s turn.")
+        logging.warning(f"Cannot select opponent's piece ({piece_symbol}) on {turn}'s turn.")
         # Redraw board without selection
         updates = []
-        for r in range(8):
-             for f in range(8):
-                 cr = 7 - r
-                 cf = f
+        for r_idx in range(8):
+             for f_idx in range(8):
+                 cr = 7 - r_idx
+                 cf = f_idx
                  p = GAME.board.piece_at_coords(cf, cr)
                  updates.append(
                      gr.update(**get_cell_properties(cr, cf, p, selected_square=None))
                  )
-         return [current_selected_piece_state, gr.update(), gr.update()] + updates
+        return [current_selected_piece_state, gr.update(), gr.update()] + updates
 
 
-    log_info(f"Selected piece: {piece_name} ({piece_symbol}) at r{row},c{col} (chess {chess_file},{chess_rank}) for {turn}")
+    logging.info(f"Selected piece: {piece_name} ({piece_symbol}) at r{row},c{col} (chess {chess_file},{chess_rank}) for {turn}")
 
     prompt_text = GAME.get_fraction_user_prompt(turn, piece_name) or "" # Get existing prompt or empty string
 
@@ -293,11 +304,11 @@ def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
 
     # Update board highlighting the selected piece
     board_updates = []
-    for r in range(8):
-        for f in range(8):
+    for r_idx in range(8):
+        for f_idx in range(8):
             # Map Gradio grid to chess coords
-            cr = 7 - r
-            cf = f
+            cr = 7 - r_idx
+            cf = f_idx
             p = GAME.board.piece_at_coords(cf, cr)
             board_updates.append(
                 gr.update(**get_cell_properties(cr, cf, p, selected_square=selected_square))
@@ -317,22 +328,23 @@ def choose_piece(row: int, col: int, current_selected_piece_state: dict | None):
 
 def save_prompt(new_prompt: str, selected_piece_state: dict | None):
     """ Saves the updated prompt text for the currently selected piece fraction. """
+    # (Code from previous version)
     if not selected_piece_state:
-        log_warning("Save prompt called but no piece selected.")
+        logging.warning("Save prompt called but no piece selected.")
         return gr.update() # No change feedback needed? Or maybe a status message?
 
     color = selected_piece_state.get("color")
     piece_name = selected_piece_state.get("name")
 
     if not color or not piece_name:
-         log_error(f"Invalid selected piece state for saving prompt: {selected_piece_state}")
+         logging.error(f"Invalid selected piece state for saving prompt: {selected_piece_state}")
          return gr.update() # Error feedback?
 
-    log_info(f"Saving prompt for {color} {piece_name}: '{new_prompt}'")
+    logging.info(f"Saving prompt for {color} {piece_name}: '{new_prompt}'")
     success = GAME.update_fraction_prompt(color, piece_name, new_prompt)
 
     if not success:
-         log_warning(f"Failed to save prompt for {color} {piece_name}.")
+         logging.warning(f"Failed to save prompt for {color} {piece_name}.")
          # Optionally provide feedback to the user via a status component
          # return gr.update(value="Failed to save prompt!")
 
@@ -343,6 +355,7 @@ def save_prompt(new_prompt: str, selected_piece_state: dict | None):
 
 def make_board_layout(selected_piece_state, prompt_img, prompt_text):
     """ Creates the Gradio layout for the chessboard and labels. """
+    # (Code from previous version)
     board_buttons = [] # Store button objects
     with gr.Column(scale=0): # Container for the board and labels
         # Top Row: Evaluation Slider
@@ -362,23 +375,21 @@ def make_board_layout(selected_piece_state, prompt_img, prompt_text):
                      gr.Markdown(f"{r}", elem_classes=["rank-file-label"])
 
             # Chessboard Grid (8x8) - Middle Columns
-            with gr.Column(scale=8): # Main board area
-                for r in range(8): # Gradio rows (0-7, top to bottom)
-                    with gr.Row(equal_height=True):
-                         for f in range(8): # Gradio columns (0-7, left to right)
-                             # Map to chess coords
-                             chess_rank = 7 - r
-                             chess_file = f
-                             piece = GAME.board.piece_at_coords(chess_file, chess_rank)
-                             button = gr.Button(**get_cell_properties(chess_rank, chess_file, piece, selected_square=None))
-                             # Add click handler
-                             button.click(
-                                 fn=partial(choose_piece, r, f), # Pass Gradio row/col
-                                 inputs=[selected_piece_state],
-                                 outputs=[selected_piece_state, prompt_img, prompt_text] + board_buttons, # Update state, prompt, board
-                                 queue=False, # Fast interaction for selection
-                             )
-                             board_buttons.append(button) # Add to list *after* creating handler
+            # Create buttons row by row, collect them, THEN connect handlers
+            board_rows_data = []
+            for r in range(8): # Gradio rows (0-7, top to bottom)
+                 row_buttons = []
+                 with gr.Row(equal_height=True):
+                      for f in range(8): # Gradio columns (0-7, left to right)
+                          # Map to chess coords
+                          chess_rank = 7 - r
+                          chess_file = f
+                          piece = GAME.board.piece_at_coords(chess_file, chess_rank)
+                          button = gr.Button(**get_cell_properties(chess_rank, chess_file, piece, selected_square=None))
+                          row_buttons.append(button)
+                          board_buttons.append(button) # Add to the flat list for output connection
+                 board_rows_data.append({"row_idx": r, "buttons": row_buttons})
+
 
             # File labels (a to h) - Bottom Row (within the board container column)
             with gr.Row(equal_height=False):
@@ -386,11 +397,32 @@ def make_board_layout(selected_piece_state, prompt_img, prompt_text):
                  for f_char_code in range(ord('a'), ord('h') + 1):
                      gr.Markdown(f"{chr(f_char_code)}", elem_classes=["rank-file-label"])
 
+    # --- Connect Handlers AFTER all buttons are created ---
+    # Requires the flat list `board_buttons` for outputs
+    for r_data in board_rows_data:
+        r = r_data["row_idx"]
+        for f, button in enumerate(r_data["buttons"]):
+            button.click(
+                fn=partial(choose_piece, r, f), # Pass Gradio row/col
+                inputs=[selected_piece_state],
+                # Output the state, prompt image, prompt text, AND the list of all board buttons
+                outputs=[selected_piece_state, prompt_img, prompt_text] + board_buttons,
+                queue=False, # Fast interaction for selection
+            )
+
     return board_buttons, thermo # Return button list and slider
-
-
+# --- Main Function ---
 def main():
     """ Main function to set up and launch the Gradio interface. """
+
+    # *** ADDED Logging Configuration ***
+    logging.basicConfig(
+        level=logging.INFO,  # Capture INFO, WARNING, ERROR, CRITICAL
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', # Include module name
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    logging.info("Gradio application starting...") # Test message
+
     with gr.Blocks(css=CSS, title="Prompt Chess") as demo:
         # --- State Management ---
         # Store selected piece info {name, color, square:(rank,file)}
@@ -411,7 +443,7 @@ def main():
                     with gr.Column(scale=1): # Info next to piece image
                         turn = gr.Textbox(label="Turn", value=GAME.get_current_turn(), interactive=False)
                         # Add prompt input
-                        prompt_text = gr.Textbox(label="Instructions", interactive=True, lines=3)
+                        prompt_text = gr.Textbox(label="Instructions", interactive=True, lines=3, placeholder="Select a piece of your color (not King) to give it instructions...")
                         # Add save button for prompt
                         save_button = gr.Button("Save Instructions")
 
@@ -451,6 +483,7 @@ def main():
             queue=True, # Long-running task
         )
 
+    logging.info("Gradio Blocks defined, launching demo...")
     demo.queue()
     demo.launch()
 
