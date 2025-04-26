@@ -29,7 +29,7 @@ class KingPiece:
             "C. Prioritize: King safety → material balance → activity.\n"
             "D. Select the single best King move.\n\n"
             "IMPORTANT\n"
-            "• Do not invent illegal moves.\n"
+            "• PICK ONLY FROM THE LIST OF AVAILABLE MOVES BELOW."
             "• Stay concise, authoritative, regal.\n"
             "• State your answer in approximately 100 words."
         )
