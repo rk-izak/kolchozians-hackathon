@@ -1,5 +1,6 @@
 import chess # Need chess constants like chess.PAWN, chess.WHITE
 from .chessboard import ChessBoard
+from .game_agents.evaluator import Evaluator
 from .game_agents.chessfraction import ChessFraction
 from .game_agents.king import KingPiece, KingState
 from .utils import log_info, log_warning, log_error
@@ -47,6 +48,7 @@ class GameState:
         # Initialize fractions with agent and active status
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
         self.kings = self._initialize_kings()
+        self.evaluator = Evaluator(model=MODEL_PLACEHOLDER)
         self._update_fraction_status() # Set initial active status based on board
         log_info("GameState initialized.")
 
@@ -308,6 +310,17 @@ class GameState:
         else:
             log_warning(f"Move {move_san} failed: {message}")
         return success, message
+
+    async def evaluate_board(self):
+        evaluation = await self.evaluator.call(
+            self.get_board_state(),
+            self.board.get_board_2d_string(),
+        )
+        evaluation = int(evaluation.eval)
+        evaluation = min(evaluation, 10)
+        evaluation = max(evaluation, -10)
+        evaluation = round(evaluation, 1)
+        return evaluation
 
     def is_game_over(self) -> bool:
         """Checks if the game has ended."""

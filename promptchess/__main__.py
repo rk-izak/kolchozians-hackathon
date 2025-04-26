@@ -54,6 +54,12 @@ button.cell:disabled,
     height:     70px;
     font-size:  40px;
 }
+
+.thermo {
+    width: 100%;
+}
+
+
 """
 
 
@@ -90,11 +96,13 @@ async def make_move():
             thinking_text += payload + "\n"
             dummy_board_updates = [gr.update()]*64
             dummy_turn = gr.update()
-            yield dummy_board_updates + [dummy_turn, gr.update(value=thinking_text)]
+            dummy_eval = gr.update()
+            yield dummy_board_updates + [dummy_turn, gr.update(value=thinking_text), dummy_eval]
 
         elif kind == "move":
             move = payload
             GAME.board.apply_move(move)
+            eval_grade = await GAME.evaluate_board()
             updates = []
             for r in range(8):
                 for c in range(7, -1, -1):
@@ -102,7 +110,7 @@ async def make_move():
                     updates.append(
                         gr.update(**get_cell_properties(r, c, piece))
                     )
-            updates += [GAME.board.get_turn(), gr.update(value=thinking_text)]
+            updates += [GAME.board.get_turn(), gr.update(value=thinking_text), eval_grade]
             yield  updates
 
 
@@ -142,22 +150,30 @@ def save_prompt(
 
 def make_board(selected_piece, prompt_img, prompt):
     buttons = []
-    with gr.Row() as chess_board:
-        with gr.Column(min_width=24, scale=0):          # narrow column
-            for rank in range(8, 0, -1):
-                gr.Markdown(f"# {rank}", elem_classes=["rank-file-label"])
-        for file in range(8):
-            with gr.Column(min_width=70, scale=0): 
-                for rank in range(7, -1, -1):
-                    piece = GAME.board.piece_at(rank, file)
-                    buttons.append(gr.Button(**get_cell_properties(rank, file, piece)))
+    with gr.Column():
+        with gr.Row():
+            thermo = gr.Slider(
+                minimum=-10, maximum=10, step=0.1,
+                value=0,
+                interactive=False,
+                label="evaluation",
+                elem_classes=["thermo"]
+            )
+        with gr.Row() as chess_board:
+            with gr.Column(min_width=24, scale=0):          # narrow column
+                for rank in range(8, 0, -1):
+                    gr.Markdown(f"# {rank}", elem_classes=["rank-file-label"])
+            for file in range(8):
+                with gr.Column(min_width=70, scale=0): 
+                    for rank in range(7, -1, -1):
+                        piece = GAME.board.piece_at(rank, file)
+                        buttons.append(gr.Button(**get_cell_properties(rank, file, piece)))
 
-    with gr.Row():
-        gr.Markdown(" ")
-        for file in range(8):
-            letter = chr(ord('a') + file)
-            gr.Markdown(f"# {letter}", elem_classes=["rank-file-label"])
-    
+        with gr.Row():
+            gr.Markdown(" ")
+            for file in range(8):
+                letter = chr(ord('a') + file)
+                gr.Markdown(f"# {letter}", elem_classes=["rank-file-label"])
     for idx, btn in enumerate(buttons):
         r, c = divmod(idx, 8)
         btn.click(
@@ -165,7 +181,7 @@ def make_board(selected_piece, prompt_img, prompt):
             outputs=[prompt_img, prompt, selected_piece] + buttons,
             queue=False,
         )
-    return buttons
+    return buttons, thermo
 
 
 def main():
@@ -195,12 +211,13 @@ def main():
                     thinking = gr.Markdown(label="Thinking...")
 
             with gr.Column(min_width=760, scale=0):
-                chess_board = make_board(selected_piece, prompt_img, prompt)
-                move.click(
-                    fn=make_move,
-                    outputs=chess_board + [turn, thinking],
-                    queue=True,
-                )
+                with gr.Row():
+                    chess_board, thermo = make_board(selected_piece, prompt_img, prompt)
+            move.click(
+                fn=make_move,
+                outputs=chess_board + [turn, thinking, thermo],
+                queue=True,
+            )
     demo.queue()
     demo.launch()
 
