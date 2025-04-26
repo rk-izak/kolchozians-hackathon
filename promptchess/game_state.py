@@ -6,7 +6,11 @@ from .game_agents.king import KingPiece, KingState
 from .utils import log_info, log_warning, log_error
 
 
-MODEL_PLACEHOLDER = "gpt-4o-mini"
+# MODEL_PLACEHOLDER = "gpt-4o-mini"
+SMART_MODEL = "o3-2025-04-16"
+BALANCED_MODEL = "gpt-4.1-2025-04-14"
+EFFICIENT_MODEL = "o4-mini-2025-04-16"
+
 # Map lowercase piece names to python-chess piece types
 PIECE_TYPE_MAP = {
     'pawn': chess.PAWN,
@@ -48,7 +52,7 @@ class GameState:
         # Initialize fractions with agent and active status
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
         self.kings = self._initialize_kings()
-        self.evaluator = Evaluator(model=MODEL_PLACEHOLDER)
+        self.evaluator = Evaluator(model=BALANCED_MODEL)
         self._update_fraction_status() # Set initial active status based on board
         log_info("GameState initialized.")
 
@@ -63,7 +67,7 @@ class GameState:
             for piece_key in FRACTION_PIECE_TYPES:
                 fraction_name = f"{color_name}_{piece_key}"
                 agent = ChessFaction(
-                    model=MODEL_PLACEHOLDER,
+                    model=EFFICIENT_MODEL,
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
                     user_prompt=user_prompt
@@ -80,7 +84,7 @@ class GameState:
         log_info("Initializing King agents...")
         kings = {}
         for color_name in PIECE_COLOURS.keys():
-            kings[color_name] = KingPiece(model=MODEL_PLACEHOLDER)
+            kings[color_name] = KingPiece(model=SMART_MODEL)
             log_info(f"Initialized {color_name} King agent.")
         log_info("King agents initialized.")
         return kings
