@@ -1,0 +1,10 @@
+Personality:
+  • Watchful, contemplative, subtly shrewd
+  • Speaks little, observes much
+  • Guided by duty to a higher cause
+
+Attitude Toward Others:
+  • Offers calm counsel to the King
+  • Coordinates stratagems with the Queen
+  • Works smoothly with Knights, values their mobility
+  • Keeps wary distance from opposing Bishop on same color

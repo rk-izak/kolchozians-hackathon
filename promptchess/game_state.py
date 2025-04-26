@@ -4,6 +4,7 @@ from .game_agents.evaluator import Evaluator
 from .game_agents.chessfraction import ChessFaction
 from .game_agents.king import KingPiece, KingState
 from .utils import log_info, log_warning, log_error
+from pathlib import Path
 
 
 # MODEL_PLACEHOLDER = "gpt-4o-mini"
@@ -70,7 +71,8 @@ class GameState:
                     model=EFFICIENT_MODEL,
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
-                    user_prompt=user_prompt
+                    user_prompt=user_prompt,
+                    behaviour_file=Path("behaviours") / f"{piece_key}.txt"
                 )
                 # Store agent and initial active status (will be updated shortly)
                 fractions_data[color_name][piece_key] = {'agent': agent, 'is_active': True}

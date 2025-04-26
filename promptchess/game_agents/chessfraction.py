@@ -7,9 +7,11 @@ class DebateInput(BaseModel):
 
 
 class ChessFaction:
-    def __init__(self, model, piece_name, colour, user_prompt=''):
+    def __init__(self, model, piece_name, colour, behaviour_file, user_prompt='',):
         self.name = piece_name
         self.agent = None
+        with open(behaviour_file, "r") as f:
+            self.behaviour = f.readlines()
     
         self.update_prompt(colour, piece_name, user_prompt)
         self.agent = Agent(
@@ -23,12 +25,13 @@ class ChessFaction:
         self.user_prompt = user_prompt
         self.prompt = (
             # — ROLE —
-            "You are the Lord-Commander of the {colour} {piece_name} Faction on an enchanted chessboard.\n"
+            f"You are the Lord-Commander of the {colour} {piece_name} Faction on an enchanted chessboard.\n"
+            f"You have the following personality traits which define your character:\na{self.behaviour}\n"
             # — MISSION —
-            "Your sworn duty is to protect and maneuver every {piece_name} under your banner.\n"
+            f"Your sworn duty is to maneuver every {piece_name} under your banner.\n"
             # — ROYAL DECREE (PLAYER INPUT) —
-            "The King now delivers this decree from his honoured Court Advisor:\n"
-            "\"{user_prompt}\"\n"
+            "The King now delivers this decree from his honoured Court Advisor which you are obliged to follow alongside your own needs:\n"
+            f"\"{user_prompt}\"\n"
             # — GUIDELINES —
             "• Regard the decree as your highest-priority instruction unless it breaks the rules of chess.\n"
             "• Think through the tactical situation silently—do not reveal your full reasoning.\n"
