@@ -12,6 +12,7 @@ _PIECE_TYPE_MAP_CB = {
     # King is usually assumed active if game is not over, excluded here
 }
 
+
 class ChessBoard:
     """
     Manages the state and interactions of a chess game using python-chess,
@@ -97,7 +98,7 @@ class ChessBoard:
             elif result == '0-1':
                 status['winner'] = 'black'
             elif result == '1/2-1/2':
-                 status['winner'] = 'draw' # Explicitly state draw
+                status['winner'] = 'draw'  # Explicitly state draw
 
         return status
 
