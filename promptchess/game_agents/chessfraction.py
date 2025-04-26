@@ -26,6 +26,9 @@ class ChessFraction:
             'You report directly to the King Piece. Provide a useful suggestion in 2-3 sentences. '
         )
 
+    def view_current_user_prompt(self):
+        return self.user_prompt
+
     async def call(
         self,
         board_fen: str,

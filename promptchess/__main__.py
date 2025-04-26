@@ -1,7 +1,7 @@
 import gradio as gr
 from functools import partial
 
-from .chessboard import ChessBoard
+from .game_state import GameState, SHORT_PIECE_MAP
 from .visualize import visualize
 
 CSS = """
@@ -17,18 +17,20 @@ CSS = """
 }
 """
 
-def random_move(board):
-    moves = board.get_legal_moves()
-    board.apply_move(moves[0])
+GAME = GameState()
+
+async def random_move():
+    move = await GAME.decide_move()
+    GAME.board.apply_move(move)
 
     updates = []
     for r in range(8):
         for c in range(7, -1, -1):
-            piece = board.piece_at(c, r)
+            piece = GAME.board.piece_at(c, r)
             
             check_active = False
             if piece is not None:
-                if board.get_turn() == 'white':
+                if GAME.board.get_turn() == 'white':
                     check_active = piece.isupper()
                 else:
                     check_active = piece.islower()
@@ -39,19 +41,32 @@ def random_move(board):
                     interactive=check_active
                 )
             )
-    updates.append(board.get_turn())
+    updates.append(GAME.board.get_turn())
     return updates
 
-def change_prompt(row, col, board):
-    return [visualize(board.piece_at(7-col, row)), "PROMPT"]
+def choose_piece(row, col):
+    piece_name = SHORT_PIECE_MAP[GAME.board.piece_at(7-col, row).lower()]
+    turn = GAME.board.get_turn()
+    prompt = GAME.get_fraction_user_prompt(turn, piece_name)
+    return [visualize(GAME.board.piece_at(7-col, row)), prompt, piece_name]
 
-def make_board(board, prompt_img, prompt):
+def save_prompt(
+    new_prompt: str,
+    selected: str | None,
+):
+    if selected is None:
+        return
+
+    turn = GAME.board.get_turn()
+    GAME.update_fraction_prompt(turn, selected, new_prompt)
+
+def make_board(selected_piece, prompt_img, prompt):
     buttons = []
     with gr.Row() as chess_board:
         for col in range(8):
             with gr.Column(min_width=70, scale=0): 
                 for row in range(7, -1, -1):
-                    piece = board.piece_at(row, col)
+                    piece = GAME.board.piece_at(row, col)
                     b = gr.Button(
                         value=visualize(piece),
                         interactive=piece is not None and piece.isupper(),
@@ -62,22 +77,21 @@ def make_board(board, prompt_img, prompt):
     for idx, btn in enumerate(buttons):
         r, c = divmod(idx, 8)
         btn.click(
-            fn=partial(change_prompt, r, c),
-            inputs=gr.State(board),
-            outputs=[prompt_img, prompt],
+            fn=partial(choose_piece, r, c),
+            outputs=[prompt_img, prompt, selected_piece],
             queue=False,
         )
     return buttons
 
 
 def main():
-    board = ChessBoard()
 
     with gr.Blocks(css=CSS) as demo:
+        selected_piece = gr.State(None)
         gr.Markdown("### Prompt Chess")
         with gr.Row():
             with gr.Column(scale=0):
-                turn = gr.Textbox(label="Turn", value=board.get_turn(), interactive=False)
+                turn = gr.Textbox(label="Turn", value=GAME.board.get_turn(), interactive=False)
             with gr.Column(scale=1):
                 clicked = gr.Textbox(label="Prompt", interactive=False)
         with gr.Row():
@@ -87,13 +101,18 @@ def main():
                         prompt_img = gr.Textbox(label="Figure", interactive=False, elem_classes=["figure-img"])
                     with gr.Column(scale=1):
                         prompt = gr.Textbox(label="Thinking...", interactive=True)
+                        prompt.change(
+                            fn=save_prompt,
+                            inputs=[prompt, selected_piece],
+                            outputs=None,
+                            queue=False,
+                        )
                     with gr.Column(scale=0):
                         move = gr.Button(value="Make move")
             with gr.Column(min_width=760, scale=0):
-                chess_board = make_board(board, prompt_img, prompt)
+                chess_board = make_board(selected_piece, prompt_img, prompt)
                 move.click(
                     fn=random_move,
-                    inputs=gr.State(board),
                     outputs=chess_board + [turn],
                     queue=False,
                 )
