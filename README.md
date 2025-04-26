@@ -76,3 +76,15 @@ The simulation progress and results will be printed to the console.
     *   The game continues until a checkmate, stalemate, draw condition, or maximum turn limit is reached.
 
 The `__main__.py` script handles the Gradio interface logic, allowing human players to interact, view the board, select pieces, and manage prompts (if playing as human). The `simulation.py` script runs a headless game between two agents, logging the process.
+
+## Technologies Used
+
+*   **`Poetry`**: Used for dependency management and packaging.
+*   **`chess` (`python-chess`)**: Provides the core chess logic, board representation, move generation/validation, and game state detection.
+*   **`gradio`**: Powers the interactive web UI for playing against humans or agents.
+*   **`openai-agents`**: A library facilitating interaction with LLMs (like those from OpenAI). Used by the AI agents (`PromptAgent`, `ChessFaction`, etc.) to make decisions, update prompts, and generate suggestions.
+*   **`opik`**: Integrated for tracing and observability of AI agent interactions, helping to monitor and debug LLM calls.
+*   **`pydantic`**: Used internally (likely by `openai-agents`) for data validation and structuring the inputs/outputs for LLM interactions.
+*   **`python-dotenv`**: Loads environment variables (like API keys) from a `.env` file.
+*   **`asyncio`**: Python's asynchronous programming library, used to manage concurrent operations like LLM calls efficiently.
+*   **`coloredlogs`**: Provides colored console logging for better readability.
