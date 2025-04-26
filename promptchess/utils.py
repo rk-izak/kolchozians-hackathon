@@ -9,7 +9,6 @@ handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 coloredlogs.install(level='INFO', logger=logger, fmt='%(asctime)s %(levelname)s %(message)s')
 
-
 def log_debug(*args, **kwargs):
     """Log an debug message."""
     logger.debug(*args, **kwargs)

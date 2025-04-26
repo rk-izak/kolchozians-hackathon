@@ -12,6 +12,7 @@ gradio = "^5.27.0"
 coloredlogs = "^15.0.1"
 openai-agents = "^0.0.13"
 opik = "^1.7.11"
+python-dotenv = "^1.1.0"
 
 [tool.poetry-exec-plugin.commands]
 mypy = "mypy --ignore-missing-imports promptchess"

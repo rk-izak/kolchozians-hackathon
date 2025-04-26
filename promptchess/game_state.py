@@ -1,19 +1,24 @@
-import chess                                     # Need chess constants like chess.PAWN, chess.WHITE
 from pathlib import Path
 
+import chess
+from agents import set_trace_processors
+from dotenv import load_dotenv
+from opik.integrations.openai.agents import OpikTracingProcessor
+
 from .chessboard import ChessBoard
-# from .game_agents.evaluator import Evaluator          # ← removed
 from .game_agents.chessfraction import ChessFaction
-from .game_agents.king import KingPiece
 from .game_agents.jester import ChessJester
-from .utils import log_info, log_warning, log_error
+from .game_agents.king import KingPiece
+from .utils import log_info, log_warning
 
+load_dotenv()
 
-# MODEL_PLACEHOLDER = "gpt-4o-mini"
 SMART_MODEL = "o3-2025-04-16"
 BALANCED_MODEL = "gpt-4.1-2025-04-14"
 EFFICIENT_MODEL = "o4-mini-2025-04-16"
 SMALL_MODEL = "gpt-4.1-nano-2025-04-14"
+
+set_trace_processors(processors=[OpikTracingProcessor(project_name="kolchozians")])
 
 # ───── Piece values for “health” ───────────────────────
 # (maximum material for one side = 49)
