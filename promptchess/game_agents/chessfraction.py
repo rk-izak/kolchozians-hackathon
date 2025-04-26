@@ -28,7 +28,10 @@ class ChessFaction:
             f"You are the Lord-Commander of the {colour} {piece_name} Faction on an enchanted chessboard.\n"
             f"You have the following personality traits which define your character:\na{self.behaviour}\n"
             # — MISSION —
-            f"Your sworn duty is to maneuver every {piece_name} under your banner.\n"
+            f"Your sworn duty is to maneuver every {colour} {piece_name} under your banner.\n"
+            "NEVER LEAVE THE CHARACTER."
+            "In general, capital letters represent white pieces, and lowercase letters represent black pieces.\n"
+            "Ensure you only move your own pieces according to available legal moves.\n"
             # — ROYAL DECREE (PLAYER INPUT) —
             "The King now delivers this decree from his honoured Court Advisor which you are obliged to follow alongside your own needs:\n"
             f"\"{user_prompt}\"\n"
@@ -48,9 +51,10 @@ class ChessFaction:
     async def call(
         self,
         board_fen: str,
-        board_2d: str
+        board_2d: str,
+        legal_moves: list[str]
     ) -> DebateInput:
-        agent_input = f'\nCurrent Board State:\nFEN: {board_fen}\n\n{board_2d}'
+        agent_input = f'\nCurrent Board State:\nFEN: {board_fen}\n\n{board_2d} \n\nAvailable Moves:\n*{"\n*".join(legal_moves)}'
         run_result = await Runner.run(self.agent, agent_input)
         final_output = run_result.final_output_as(DebateInput)
         return final_output
@@ -61,5 +65,6 @@ class ChessFaction:
         Thin wrapper so GameState can call `await frac.suggest_move(board)`.
         """
         result = await self.call(board.get_fen(),
-                                 board.get_board_2d_string())
+                                 board.get_board_2d_string(),
+                                 board.get_legal_moves())
         return result.debate_input

@@ -95,16 +95,24 @@ async def make_move():
                 gr.update(value=thinking_text),       # thinking
                 gr.update(),                          # white health
                 gr.update(),                          # black health
+                gr.update(),                          # white points
+                gr.update(),                          # black points
                 gr.update(),                          # jester slot
             ]
 
         # ───────── King finally chose a move ──────────
         elif kind == "move":
             move = payload
-            GAME.board.apply_move(move)
+            # ------------------------- CHANGED -----------------------
+            success, msg = GAME.apply_move(move)      # call GameState logic
+            if not success:
+                raise ValueError(msg)
+            # --------------------------------------------------------
 
-            white_hp, black_hp = GAME.get_health_scores()
-            jester             = await GAME.get_jester_comment()
+            # refreshed stats AFTER apply_move
+            white_hp, black_hp   = GAME.get_health_scores()
+            white_pts, black_pts = GAME.get_points()
+            jester               = await GAME.get_jester_comment()
 
             popup_body = (
                 f"<div>"
@@ -132,6 +140,8 @@ async def make_move():
                 gr.update(value=thinking_text),        # thinking
                 gr.update(value=white_hp),             # white health
                 gr.update(value=black_hp),             # black health
+                gr.update(value=white_pts),            # white points
+                gr.update(value=black_pts),            # black points
                 gr.update(value=popup_html, visible=True),
             ]
             yield outputs
@@ -139,7 +149,7 @@ async def make_move():
             # keep it visible 5 s
             await asyncio.sleep(5)
             yield (
-                [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
+                [gr.update()] * (64 + 6)               # board + turn + thinking + 2 health + 2 points
                 + [gr.update(visible=False)]           # hide jester
             )
 
@@ -177,25 +187,33 @@ def save_prompt(new_prompt: str, selected: str | None):
 def make_board(selected_piece, prompt_img, prompt):
     buttons = []
     with gr.Column():
+        # ───── health sliders row ─────────────────────────
         with gr.Row():
             health_white = gr.Slider(
-                minimum=0,
-                maximum=49,
-                step=1,
-                value=49,
-                interactive=False,
-                label="White health",
+                minimum=0, maximum=49, step=1, value=49,
+                interactive=False, label="White health",
                 elem_classes=["thermo", "health-white"],
             )
             health_black = gr.Slider(
-                minimum=0,
-                maximum=49,
-                step=1,
-                value=49,
-                interactive=False,
-                label="Black health",
+                minimum=0, maximum=49, step=1, value=49,
+                interactive=False, label="Black health",
                 elem_classes=["thermo", "health-black"],
             )
+
+        # ───── NEW points sliders row ─────────────────────
+        with gr.Row():
+            points_white = gr.Slider(
+                minimum=0, maximum=200, step=1, value=0,
+                interactive=False, label="White points",
+                elem_classes=["thermo", "health-white"],
+            )
+            points_black = gr.Slider(
+                minimum=0, maximum=200, step=1, value=0,
+                interactive=False, label="Black points",
+                elem_classes=["thermo", "health-black"],
+            )
+
+        # ───── chessboard grid ────────────────────────────
         with gr.Row() as chess_board:
             with gr.Column(min_width=24, scale=0):
                 for rank in range(8, 0, -1):
@@ -212,6 +230,8 @@ def make_board(selected_piece, prompt_img, prompt):
             for file in range(8):
                 letter = chr(ord("a") + file)
                 gr.Markdown(f"# {letter}", elem_classes=["rank-file-label"])
+
+    # attach click handler to every square
     for idx, btn in enumerate(buttons):
         r, c = divmod(idx, 8)
         btn.click(
@@ -219,7 +239,9 @@ def make_board(selected_piece, prompt_img, prompt):
             outputs=[prompt_img, prompt, selected_piece] + buttons,
             queue=False,
         )
-    return buttons, health_white, health_black
+
+    # return widgets for later updates
+    return buttons, health_white, health_black, points_white, points_black
 
 
 def main():
@@ -227,6 +249,7 @@ def main():
         selected_piece = gr.State(None)
         gr.Markdown("### Prompt Chess")
         with gr.Row():
+            # ─── left control panel ───────────────────────
             with gr.Column(scale=1):
                 with gr.Row():
                     with gr.Column(scale=0):
@@ -253,21 +276,23 @@ def main():
                 with gr.Row():
                     thinking = gr.Markdown(label="Thinking…")
                 with gr.Row():
-                    jester_box = gr.Markdown("", visible=False)  # visibility toggled by make_move
+                    jester_box = gr.Markdown("", visible=False)
 
+            # ─── right chessboard panel ───────────────────
             with gr.Column(min_width=760, scale=0):
                 with gr.Row():
-                    chess_board, health_white, health_black = make_board(
+                    chess_board, health_white, health_black, points_white, points_black = make_board(
                         selected_piece, prompt_img, prompt
                     )
 
+            # ─── click handler for “Make move” ───────────
             move.click(
                 fn=make_move,
                 outputs=chess_board + [
                     turn,
                     thinking,
-                    health_white,
-                    health_black,
+                    health_white, health_black,
+                    points_white, points_black,
                     jester_box,
                 ],
                 queue=True,

@@ -65,8 +65,11 @@ class GameState:
         self.board     = ChessBoard(fen)
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
         self.kings     = self._initialize_kings()
-        self.jester    = ChessJester(model=SMALL_MODEL)
+        self.jester    = ChessJester(model=EFFICIENT_MODEL)
         # self.evaluator = Evaluator(model=BALANCED_MODEL)     # ← removed
+
+        # ─── NEW: per-side “User Points” ───────────────────
+        self.points = {"white": 0, "black": 0}
 
         self._update_fraction_status()       # initialise active/inactive flags
         log_info("GameState initialized.")
@@ -93,6 +96,11 @@ class GameState:
     def get_health_scores(self) -> tuple[int, int]:
         """Return (white, black) health based on current board."""
         return self._side_health(chess.WHITE), self._side_health(chess.BLACK)
+
+    # ─────────────── Points helper ────────────────
+    def get_points(self) -> tuple[int, int]:
+        """Return (white_points, black_points)."""
+        return self.points["white"], self.points["black"]
 
     # keep the interface of evaluate_board, but base it on health diff
     async def evaluate_board(self):
@@ -129,7 +137,7 @@ class GameState:
         kings: dict[str, KingPiece] = {}
         for color_name in PIECE_COLOURS.keys():
             kings[color_name] = KingPiece(
-                model=SMART_MODEL,
+                model=EFFICIENT_MODEL,
                 behaviour_file=Path("behaviours") / "king.txt",
             )
             log_info(f"Initialized {color_name} King agent.")
@@ -225,7 +233,8 @@ class GameState:
                 continue
             fraction_agent = fraction_data["agent"]
             try:
-                result = await fraction_agent.call(board_fen, board_2d)
+                legal_moves = self.get_legal_moves()
+                result = await fraction_agent.call(board_fen, board_2d, legal_moves) 
                 suggestions[piece_key] = result.debate_input
                 log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
             except Exception as e:
@@ -314,22 +323,34 @@ class GameState:
 
         yield ("move", chosen_move)          # <── final yield
 
+    # ────────── UPDATED: points logic added ─────────────
     def apply_move(self, move_san: str) -> tuple[bool, str]:
         """
-        Applies a move to the board.
+        Applies a move to the board **and updates User Points**.
 
-        Args:
-            move_san: The move in Standard Algebraic Notation.
-
-        Returns:
-            A tuple (success: bool, message: str).
+        • +1 point to the mover for making a legal move  
+        • additional points equal to any captured material value
         """
+        mover = self.get_current_turn()              # colour before move
+        pre_white, pre_black = self.get_health_scores()
+
         success, message = self.board.apply_move(move_san)
-        if success:
-            log_info(f"Move {move_san} applied successfully. Updating fraction status.")
-            self._update_fraction_status()
-        else:
+        if not success:
             log_warning(f"Move {move_san} failed: {message}")
+            return success, message
+
+        # +1 point for taking a turn
+        self.points[mover] += 1
+
+        # add points for captured material
+        post_white, post_black = self.get_health_scores()
+        if pre_white > post_white:                   # Black captured something
+            self.points["black"] += pre_white - post_white
+        elif pre_black > post_black:                 # White captured something
+            self.points["white"] += pre_black - post_black
+
+        log_info(f"Move {move_san} applied successfully. Updating fraction status & points.")
+        self._update_fraction_status()
         return success, message
 
     def is_game_over(self) -> bool:
@@ -391,10 +412,3 @@ async def main():
         print(f"\nGame stopped after reaching max turns ({max_turns}).")
     elif game.is_game_over() and not game.get_game_status().get('is_checkmate') and not game.get_game_status().get('is_stalemate'):
          print(f"\nGame over. Result: {game.get_game_status()['result']}")
-
-
-if __name__ == "__main__":
-    import asyncio
-    import logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    asyncio.run(main())
