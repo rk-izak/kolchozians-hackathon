@@ -86,7 +86,10 @@ class GameState:
         log_info("Initializing King agents...")
         kings = {}
         for color_name in PIECE_COLOURS.keys():
-            kings[color_name] = KingPiece(model=SMART_MODEL)
+            kings[color_name] = KingPiece(
+                model=SMART_MODEL,
+                behaviour_file=Path("behaviours") / "king.txt"
+            )
             log_info(f"Initialized {color_name} King agent.")
         log_info("King agents initialized.")
         return kings
