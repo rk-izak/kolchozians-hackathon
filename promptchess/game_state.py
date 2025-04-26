@@ -15,6 +15,13 @@ PIECE_TYPE_MAP = {
     'queen': chess.QUEEN,
     # King is handled separately
 }
+SHORT_PIECE_MAP = {
+    'p': 'pawn',
+    'n': 'knight',
+    'b': 'bishop',
+    'r': 'rook',
+    'q': 'queen'
+}
 FRACTION_PIECE_TYPES = list(PIECE_TYPE_MAP.keys())
 PIECE_COLOURS = {'white': chess.WHITE, 'black': chess.BLACK}
 
