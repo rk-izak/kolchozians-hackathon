@@ -8,8 +8,10 @@ class DebateInput(BaseModel):
 
 class ChessFraction:
     def __init__(self, model, piece_name, colour, user_prompt=''):
+        self.name = piece_name
+        self.agent = None
+    
         self.update_prompt(colour, piece_name, user_prompt)
-
         self.agent = Agent(
             name=piece_name,
             model=model,
@@ -25,6 +27,8 @@ class ChessFraction:
             f'{user_prompt}'
             'You report directly to the King Piece. Provide a useful suggestion in 2-3 sentences. '
         )
+        if self.agent:
+            self.agent.instructions = self.prompt
 
     def view_current_user_prompt(self):
         return self.user_prompt
@@ -38,3 +42,12 @@ class ChessFraction:
         run_result = await Runner.run(self.agent, agent_input)
         final_output = run_result.final_output_as(DebateInput)
         return final_output
+
+
+    async def suggest_move(self, board):
+        """
+        Thin wrapper so GameState can call `await frac.suggest_move(board)`.
+        """
+        result = await self.call(board.get_fen(),
+                                 board.get_board_2d_string())
+        return result.debate_input
