@@ -1,17 +1,19 @@
-import chess # Need chess constants like chess.PAWN, chess.WHITE
+import chess                                     # Need chess constants like chess.PAWN, chess.WHITE
+from pathlib import Path
+
 from .chessboard import ChessBoard
 from .game_agents.evaluator import Evaluator
 from .game_agents.chessfraction import ChessFaction
-from .game_agents.king import KingPiece, KingState
+from .game_agents.king import KingPiece
+from .game_agents.jester import ChessJester                        
 from .utils import log_info, log_warning, log_error
-from pathlib import Path
 
 
 # MODEL_PLACEHOLDER = "gpt-4o-mini"
 SMART_MODEL = "o3-2025-04-16"
 BALANCED_MODEL = "gpt-4.1-2025-04-14"
 EFFICIENT_MODEL = "o4-mini-2025-04-16"
-
+SMALL_MODEL = "gpt-4.1-nano-2025-04-14"
 # Map lowercase piece names to python-chess piece types
 PIECE_TYPE_MAP = {
     'pawn': chess.PAWN,
@@ -34,37 +36,46 @@ PIECE_COLOURS = {'white': chess.WHITE, 'black': chess.BLACK}
 
 class GameState:
     """
-    Manages the overall state of the chess game, including the board,
-    the AI agents representing piece fractions (tracking their presence),
-    and the King agent for decisions.
+    Manages the overall state of the chess game, including:
+    • the chessboard,
+    • fraction agents (pawns, knights, …),
+    • King agents deciding moves,
+    • the **Jester** for humour + move judgement.
     """
 
-    def __init__(self, fen: str | None = None, white_user_prompt: str = '', black_user_prompt: str = ''):
-        """
-        Initializes the game state.
-
-        Args:
-            fen: Optional FEN string to load a specific board position.
-            white_user_prompt: Initial custom prompt instructions for the white fractions.
-            black_user_prompt: Initial custom prompt instructions for the black fractions.
-        """
-        log_info("Initializing GameState...")
-        self.board = ChessBoard(fen)
-        # Initialize fractions with agent and active status
+    def __init__(
+        self,
+        fen: str | None = None,
+        white_user_prompt: str = "",
+        black_user_prompt: str = "",
+    ):
+        log_info("Initializing GameState…")
+        self.board     = ChessBoard(fen)
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
-        self.kings = self._initialize_kings()
+        self.kings     = self._initialize_kings()
+        self.jester    = ChessJester(model=SMALL_MODEL)
         self.evaluator = Evaluator(model=BALANCED_MODEL)
-        self._update_fraction_status() # Set initial active status based on board
+
+        self._update_fraction_status()       # initialise active/inactive flags
         log_info("GameState initialized.")
+    
+    async def get_jester_comment(self):
+        """
+        Return a `JesterState` (joke + qualitative judgement)
+        for the current board snapshot.
+        """
+        return await self.jester.call(
+            self.get_board_state(),
+            self.board.get_board_2d_string(),
+        )
 
     def _initialize_fractions(self, white_user_prompt: str, black_user_prompt: str) -> dict:
         """Initializes ChessFraction agents, storing them with an 'is_active' flag."""
-        log_info("Initializing fractions...")
-        fractions_data = {'white': {}, 'black': {}}
+        log_info("Initializing fractions…")
+        fractions_data = {"white": {}, "black": {}}
 
         for color_name, color_const in PIECE_COLOURS.items():
-            user_prompt = white_user_prompt if color_name == 'white' else black_user_prompt
-            fractions_data[color_name] = {}
+            user_prompt = white_user_prompt if color_name == "white" else black_user_prompt
             for piece_key in FRACTION_PIECE_TYPES:
                 fraction_name = f"{color_name}_{piece_key}"
                 agent = ChessFaction(
@@ -72,10 +83,9 @@ class GameState:
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
                     user_prompt=user_prompt,
-                    behaviour_file=Path("behaviours") / f"{piece_key}.txt"
+                    behaviour_file=Path("behaviours") / f"{piece_key}.txt",
                 )
-                # Store agent and initial active status (will be updated shortly)
-                fractions_data[color_name][piece_key] = {'agent': agent, 'is_active': True}
+                fractions_data[color_name][piece_key] = {"agent": agent, "is_active": True}
                 log_info(f"Initialized fraction agent: {fraction_name}")
 
         log_info("Fraction agents initialized.")
@@ -83,12 +93,12 @@ class GameState:
 
     def _initialize_kings(self) -> dict[str, KingPiece]:
         """Initializes the KingPiece agents for both colors."""
-        log_info("Initializing King agents...")
-        kings = {}
+        log_info("Initializing King agents…")
+        kings: dict[str, KingPiece] = {}
         for color_name in PIECE_COLOURS.keys():
             kings[color_name] = KingPiece(
                 model=SMART_MODEL,
-                behaviour_file=Path("behaviours") / "king.txt"
+                behaviour_file=Path("behaviours") / "king.txt",
             )
             log_info(f"Initialized {color_name} King agent.")
         log_info("King agents initialized.")
@@ -96,52 +106,43 @@ class GameState:
 
     def _update_fraction_status(self) -> None:
         """Gets active piece status from the board and updates fraction statuses."""
-        log_info("Updating fraction active status...")
+        log_info("Updating fraction active status…")
         active_pieces_on_board = self.board.get_active_pieces()
 
         updated_count = 0
         deactivated_count = 0
 
-        # Iterate through our stored fractions and update based on board status
         for color_name, fractions_for_color in self.fractions.items():
             if color_name not in active_pieces_on_board:
-                log_warning(f"Color '{color_name}' not found in board active pieces status. Skipping.")
+                log_warning(f"Color '{color_name}' not found in board active pieces. Skipping.")
                 continue
 
             board_status_for_color = active_pieces_on_board[color_name]
             for piece_key, fraction_data in fractions_for_color.items():
-                # Check if this piece type exists in the status from the board
                 is_now_active = board_status_for_color.get(piece_key, False)
-                was_active = fraction_data['is_active']
+                was_active    = fraction_data["is_active"]
 
                 if was_active != is_now_active:
-                    fraction_data['is_active'] = is_now_active
+                    fraction_data["is_active"] = is_now_active
                     status_change = "activated" if is_now_active else "deactivated"
                     log_info(f"Fraction {color_name} {piece_key} {status_change}.")
                     updated_count += 1
                     if not is_now_active:
                         deactivated_count += 1
 
-        log_info(f"Fraction status update complete. {updated_count} status changes ({deactivated_count} deactivated).")
+        log_info(
+            f"Fraction status update complete. {updated_count} changes "
+            f"({deactivated_count} deactivated)."
+        )
 
+    # ---------- Prompt management (unchanged) ----------
     def update_fraction_prompt(self, color: str, piece_name: str, new_prompt: str) -> bool:
-        """
-        Updates the user prompt for a specific fraction.
-
-        Args:
-            color: The color of the fraction ('white' or 'black').
-            piece_name: The name of the piece type (e.g., 'pawn', 'knight'). Excludes 'king'.
-            new_prompt: The new user prompt string.
-
-        Returns:
-            True if the fraction was found and updated, False otherwise.
-        """
         piece_key = piece_name.lower()
-        if piece_key == 'king':
-            log_warning("Cannot update prompt for King fraction; use King agent methods if needed.")
+        if piece_key == "king":
+            log_warning("Cannot update prompt for King fraction; use King agent methods.")
             return False
         if color in self.fractions and piece_key in self.fractions[color]:
-            fraction_agent = self.fractions[color][piece_key]['agent']
+            fraction_agent = self.fractions[color][piece_key]["agent"]
             try:
                 fraction_agent.update_prompt(color, piece_name.capitalize(), new_prompt)
                 log_info(f"Updated prompt for {color} {piece_name} fraction.")
@@ -154,72 +155,53 @@ class GameState:
             return False
 
     def get_fraction_user_prompt(self, color: str, piece_name: str) -> str | None:
-        """
-        Retrieves the current user_prompt for a specific fraction.
-
-        Args:
-            color: The color of the fraction ('white' or 'black').
-            piece_name: The name of the piece type (e.g., 'pawn', 'knight').
-
-        Returns:
-            The current user_prompt string, or None if the fraction is not found.
-        """
         piece_key = piece_name.lower()
-        if piece_key == 'king':
+        if piece_key == "king":
             log_warning("King piece does not have a standard user prompt in this structure.")
             return None
 
         if color in self.fractions and piece_key in self.fractions[color]:
-            fraction_agent = self.fractions[color][piece_key]['agent']
+            fraction_agent = self.fractions[color][piece_key]["agent"]
             return fraction_agent.user_prompt
         else:
             log_warning(f"Fraction {color} {piece_name} not found.")
             return None
 
+    # ---------- Simple board helpers ----------
     def get_board_state(self) -> str:
-        """Returns the current board state in FEN notation."""
         return self.board.get_fen()
 
     def get_current_turn(self) -> str:
-        """Returns the color of the player whose turn it is."""
-        return 'white' if self.board._board.turn == chess.WHITE else 'black'
+        return "white" if self.board._board.turn == chess.WHITE else "black"
 
     def get_game_status(self) -> dict[str, object]:
-        """Returns the current status of the game (over, check, winner, etc.)."""
         return self.board.get_status()
 
     def get_legal_moves(self) -> list[str]:
-        """Returns a list of legal moves for the current player."""
         return self.board.get_legal_moves()
 
+    # ---------- Fraction suggestions ----------
     async def get_fraction_suggestions(self) -> dict[str, str]:
-        """
-        Gets move suggestions from the fractions of the current player.
-
-        Returns:
-            A dictionary mapping piece type (lowercase) to its suggestion string.
-        """
         current_turn = self.get_current_turn()
         board_fen = self.get_board_state()
-        board_2d = self.board.get_board_2d_string() # Get 2D board string
-        suggestions = {}
+        board_2d  = self.board.get_board_2d_string()
+        suggestions: dict[str, str] = {}
 
-        log_info(f"Getting suggestions for active {current_turn} fractions...")
-        active_fraction_count = 0
+        log_info(f"Getting suggestions for active {current_turn} fractions…")
         for piece_key, fraction_data in self.fractions[current_turn].items():
-            if fraction_data['is_active']:
-                active_fraction_count += 1
-                fraction_agent = fraction_data['agent']
-                try:
-                    result = await fraction_agent.call(board_fen, board_2d)
-                    suggestions[piece_key] = result.debate_input
-                    log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
-                except Exception as e:
-                    log_warning(f"Error getting suggestion from active {current_turn} {piece_key}: {e}")
-                    suggestions[piece_key] = f"Error fetching suggestion: {e}"
+            if not fraction_data["is_active"]:
+                continue
+            fraction_agent = fraction_data["agent"]
+            try:
+                result = await fraction_agent.call(board_fen, board_2d)
+                suggestions[piece_key] = result.debate_input
+                log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
+            except Exception as e:
+                log_warning(f"Error getting suggestion from active {current_turn} {piece_key}: {e}")
+                suggestions[piece_key] = f"Error fetching suggestion: {e}"
 
-        log_info(f"Received suggestions for {current_turn} from {active_fraction_count} active fractions.")
         return suggestions
+
 
     def get_active_fractions(self, colour: str | None = None) -> list[ChessFaction]:
         """
