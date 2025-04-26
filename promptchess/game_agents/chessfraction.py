@@ -6,7 +6,7 @@ class DebateInput(BaseModel):
     debate_input: str
 
 
-class ChessFraction:
+class ChessFaction:
     def __init__(self, model, piece_name, colour, user_prompt=''):
         self.name = piece_name
         self.agent = None

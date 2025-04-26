@@ -1,7 +1,7 @@
 import chess # Need chess constants like chess.PAWN, chess.WHITE
 from .chessboard import ChessBoard
 from .game_agents.evaluator import Evaluator
-from .game_agents.chessfraction import ChessFraction
+from .game_agents.chessfraction import ChessFaction
 from .game_agents.king import KingPiece, KingState
 from .utils import log_info, log_warning, log_error
 
@@ -62,7 +62,7 @@ class GameState:
             fractions_data[color_name] = {}
             for piece_key in FRACTION_PIECE_TYPES:
                 fraction_name = f"{color_name}_{piece_key}"
-                agent = ChessFraction(
+                agent = ChessFaction(
                     model=MODEL_PLACEHOLDER,
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
@@ -212,7 +212,7 @@ class GameState:
         log_info(f"Received suggestions for {current_turn} from {active_fraction_count} active fractions.")
         return suggestions
 
-    def get_active_fractions(self, colour: str | None = None) -> list[ChessFraction]:
+    def get_active_fractions(self, colour: str | None = None) -> list[ChessFaction]:
         """
         Return a list with the *agents* of all fractions that are still on
         the board for the requested colour.
