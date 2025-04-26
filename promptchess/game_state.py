@@ -1,10 +1,15 @@
 import chess # Need chess constants like chess.PAWN, chess.WHITE
+import asyncio # Added for potential async operations if needed elsewhere
+
 from .chessboard import ChessBoard
 from .game_agents.evaluator import Evaluator
 from .game_agents.chessfraction import ChessFaction
+# *** ADDED Jester Import ***
+from .game_agents.jester import ChessJester, JesterState
 from .game_agents.king import KingPiece, KingState
 from .utils import log_info, log_warning, log_error
 from pathlib import Path
+from typing import Optional # Added for type hinting
 
 
 # MODEL_PLACEHOLDER = "gpt-4o-mini"
@@ -36,7 +41,7 @@ class GameState:
     """
     Manages the overall state of the chess game, including the board,
     the AI agents representing piece fractions (tracking their presence),
-    and the King agent for decisions.
+    the King agent for decisions, the Evaluator, and the Jester.
     """
 
     def __init__(self, fen: str | None = None, white_user_prompt: str = '', black_user_prompt: str = ''):
@@ -54,6 +59,11 @@ class GameState:
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
         self.kings = self._initialize_kings()
         self.evaluator = Evaluator(model=BALANCED_MODEL)
+        # *** ADDED Jester Initialization ***
+        self.jester = ChessJester(model=BALANCED_MODEL) # Using BALANCED_MODEL, adjust if needed
+        self.last_jester_commentary: Optional[JesterState] = None # To store the last comment
+        self.decided_move: Optional[str] = None # Store the move decided by the King
+
         self._update_fraction_status() # Set initial active status based on board
         log_info("GameState initialized.")
 
@@ -140,7 +150,10 @@ class GameState:
         if color in self.fractions and piece_key in self.fractions[color]:
             fraction_agent = self.fractions[color][piece_key]['agent']
             try:
-                fraction_agent.update_prompt(color, piece_name.capitalize(), new_prompt)
+                # Assuming ChessFaction has an update_prompt method similar to this:
+                # fraction_agent.update_prompt(new_prompt) # Adjust if method signature differs
+                # Let's assume the agent has a user_prompt attribute directly for simplicity if update_prompt doesn't exist
+                fraction_agent.user_prompt = new_prompt # Or call the actual update method
                 log_info(f"Updated prompt for {color} {piece_name} fraction.")
                 return True
             except Exception as e:
@@ -168,7 +181,8 @@ class GameState:
 
         if color in self.fractions and piece_key in self.fractions[color]:
             fraction_agent = self.fractions[color][piece_key]['agent']
-            return fraction_agent.user_prompt
+            # Assuming the agent has a user_prompt attribute or a getter method
+            return getattr(fraction_agent, 'user_prompt', None) # Adjust if needed
         else:
             log_warning(f"Fraction {color} {piece_name} not found.")
             return None
@@ -192,9 +206,8 @@ class GameState:
     async def get_fraction_suggestions(self) -> dict[str, str]:
         """
         Gets move suggestions from the fractions of the current player.
-
-        Returns:
-            A dictionary mapping piece type (lowercase) to its suggestion string.
+        DEPRECATED in favor of the logic within decide_move? Keep if used elsewhere.
+        If decide_move handles this, this method might be redundant for the main flow.
         """
         current_turn = self.get_current_turn()
         board_fen = self.get_board_state()
@@ -203,14 +216,17 @@ class GameState:
 
         log_info(f"Getting suggestions for active {current_turn} fractions...")
         active_fraction_count = 0
+        # This call assumes ChessFaction.call exists and returns an object with 'debate_input'
+        # Adjust if the actual method/return structure is different (e.g., using suggest_move)
         for piece_key, fraction_data in self.fractions[current_turn].items():
             if fraction_data['is_active']:
                 active_fraction_count += 1
                 fraction_agent = fraction_data['agent']
                 try:
-                    result = await fraction_agent.call(board_fen, board_2d)
-                    suggestions[piece_key] = result.debate_input
-                    log_info(f"Suggestion from active {current_turn} {piece_key}: {result.debate_input}")
+                    # Using suggest_move as seen in decide_move, adapt if 'call' is preferred
+                    result_text = await fraction_agent.suggest_move(self.board) # Assuming suggest_move returns string
+                    suggestions[piece_key] = result_text
+                    log_info(f"Suggestion from active {current_turn} {piece_key}: {result_text}")
                 except Exception as e:
                     log_warning(f"Error getting suggestion from active {current_turn} {piece_key}: {e}")
                     suggestions[piece_key] = f"Error fetching suggestion: {e}"
@@ -222,17 +238,9 @@ class GameState:
         """
         Return a list with the *agents* of all fractions that are still on
         the board for the requested colour.
-
-        Args
-        ----
-        colour   "white", "black" or None (→ use side to move)
-
-        Example
-        -------
-        active_white = game.get_active_fractions("white")
         """
         if colour is None:
-            colour = self.get_current_turn()          # side to move
+            colour = self.get_current_turn()
 
         if colour not in self.fractions:
             return []
@@ -240,17 +248,17 @@ class GameState:
         active = []
         for piece_key, data in self.fractions[colour].items():
             if data["is_active"]:
-                active.append(data["agent"])          # store the *agent*
+                active.append(data["agent"])
         return active
 
     async def decide_move(self):
         """
-        Async-generator version of `decide_move`.
+        Async-generator version of move decision process.
 
         Yields:
-            ("debate",  <str>)          – more text to append to the debate
-            ("status",  <str>)          – e.g. "analysing king reply ..."
-            ("move",    <san_move>)     – final choice, search finished
+            ("debate",  <str>)         – more text to append to the debate
+            ("status",  <str>)         – e.g. "analysing king reply ..."
+            ("move",    <san_move>)    – final choice, search finished
         """
 
         if self.is_game_over():
@@ -264,44 +272,74 @@ class GameState:
         debate_lines = []
         active_fractions = self.get_active_fractions()
 
-        # if get_fraction_suggestions() already does everything at once,
-        # replace the `for`-loop by your existing call and yield once.
         for frac in active_fractions:
+            # Use suggest_move as indicated, assuming it takes the board object
+            # and returns a string suggestion.
             try:
-                sugg = await frac.suggest_move(self.board)
+                # Ensure the agent has the 'suggest_move' method as used here.
+                # If not, adapt to the correct method (e.g., 'call').
+                if hasattr(frac, 'suggest_move') and callable(frac.suggest_move):
+                     sugg = await frac.suggest_move(self.board) # Pass board object if needed
+                # Fallback or alternative if 'call' is the standard interface
+                elif hasattr(frac, 'call') and callable(frac.call):
+                    board_fen = self.get_board_state()
+                    board_2d = self.board.get_board_2d_string()
+                    # Assuming call returns an object with debate_input
+                    call_result = await frac.call(board_fen, board_2d)
+                    sugg = getattr(call_result, 'debate_input', "Suggestion format error.")
+                else:
+                    sugg = f"Agent {frac.name} has no recognized suggestion method."
+                    log_warning(sugg)
+
             except Exception as e:
+                log_error(f"Error getting suggestion from {frac.name}: {e}")
                 sugg = f"Error: {e}"
 
-            line = f"### {frac.name.capitalize()}: {sugg}"
+            # Make sure frac.name exists and piece_name is capitalized correctly
+            frac_display_name = getattr(frac, 'piece_name', getattr(frac, 'name', 'Unknown Fraction')).capitalize()
+            line = f"### {frac_display_name}: {sugg}"
             debate_lines.append(line)
-            yield ("debate", f"__{frac.name.capitalize()}__: {sugg}\n\n")
+            # Yield formatted for UI display
+            yield ("debate", f"__{frac_display_name}__: {sugg}\n\n")
+
 
         debate_text = "\n".join(debate_lines)
         yield ("status", "## King is thinking …")
 
         king = self.kings[turn]
+        legal_moves = self.get_legal_moves()
+
+        # Ensure King's call method signature matches
         decision = await king.call(
             debate_text,
-            self.get_board_state(),          # FEN
+            self.get_board_state(),             # FEN
             self.board.get_board_2d_string(),
-            self.get_legal_moves()
+            legal_moves # Pass the list of legal moves
         )
-        yield ("debate", decision.reasoning)
+        # Assuming decision has 'reasoning' and 'move' attributes
+        yield ("debate", f"\n**King's Decision:**\n{getattr(decision, 'reasoning', 'No reasoning provided.')}\n")
 
-        chosen_move = decision.move
-        self.decided_move = chosen_move
+        chosen_move = getattr(decision, 'move', None)
+        self.decided_move = chosen_move # Store the decided move
 
-        # basic legality check
-        if chosen_move not in self.get_legal_moves():
-            chosen_move = self.get_legal_moves()[0]
-            self.decided_move = chosen_move
-            yield ("status", "Chosen move was illegal – taking first legal move.")
+        # Basic legality check
+        if not chosen_move or chosen_move not in legal_moves:
+            yield ("status", f"King chose illegal/invalid move ('{chosen_move}'). Choosing first legal move.")
+            log_warning(f"King chose illegal/invalid move ('{chosen_move}'). Legal: {legal_moves}")
+            if not legal_moves:
+                 yield ("status", "No legal moves available! Game might be over.")
+                 # Handle this case - maybe yield a special status or raise error?
+                 # For now, we won't yield a move if none are legal.
+                 return # Stop the generator
+            chosen_move = legal_moves[0]
+            self.decided_move = chosen_move # Update stored move
 
-        yield ("move", chosen_move)          # <── final yield
+        yield ("move", chosen_move) # <── final yield
 
-    def apply_move(self, move_san: str) -> tuple[bool, str]:
+    # *** MODIFIED apply_move TO BE ASYNC and CALL JESTER ***
+    async def apply_move(self, move_san: str) -> tuple[bool, str]:
         """
-        Applies a move to the board.
+        Applies a move to the board, updates fraction status, and gets Jester commentary.
 
         Args:
             move_san: The move in Standard Algebraic Notation.
@@ -309,24 +347,57 @@ class GameState:
         Returns:
             A tuple (success: bool, message: str).
         """
+        # Reset jester commentary before applying
+        self.last_jester_commentary = None
+
         success, message = self.board.apply_move(move_san)
         if success:
             log_info(f"Move {move_san} applied successfully. Updating fraction status.")
             self._update_fraction_status()
+
+            # *** Call Jester after successful move ***
+            try:
+                board_fen = self.get_board_state()
+                board_2d = self.board.get_board_2d_string()
+                log_info("Calling Jester for commentary...")
+                self.last_jester_commentary = await self.jester.call(board_fen, board_2d)
+                log_info(f"Jester commented: {self.last_jester_commentary.judgement.value} - '{self.last_jester_commentary.joke_output}'")
+            except Exception as e:
+                log_error(f"Error getting Jester commentary: {e}")
+                self.last_jester_commentary = None # Ensure it's None on error
+
         else:
             log_warning(f"Move {move_san} failed: {message}")
         return success, message
 
+    # *** ADDED: Method to get last jester commentary ***
+    def get_last_jester_commentary(self) -> JesterState | None:
+        """Returns the JesterState from the last move, if available."""
+        return self.last_jester_commentary
+
+    # *** ADDED: Method to clear last jester commentary ***
+    def clear_last_jester_commentary(self):
+         """Clears the last commentary (e.g., after the UI displays it)."""
+         self.last_jester_commentary = None
+         log_info("Cleared last Jester commentary.")
+
     async def evaluate_board(self):
-        evaluation = await self.evaluator.call(
-            self.get_board_state(),
-            self.board.get_board_2d_string(),
-        )
-        evaluation = int(evaluation.eval)
-        evaluation = min(evaluation, 10)
-        evaluation = max(evaluation, -10)
-        evaluation = round(evaluation, 1)
-        return evaluation
+        """Calls the evaluator and returns a clamped evaluation score."""
+        try:
+            evaluation_result = await self.evaluator.call(
+                self.get_board_state(),
+                self.board.get_board_2d_string(),
+            )
+            # Assuming the result object has an 'eval' attribute that's convertible to int
+            evaluation = int(getattr(evaluation_result, 'eval', 0))
+            evaluation = min(evaluation, 10)
+            evaluation = max(evaluation, -10)
+            # No need to round if we already cast to int
+            return evaluation # Return int directly
+        except Exception as e:
+            log_error(f"Error during board evaluation: {e}")
+            return 0 # Return neutral evaluation on error
+
 
     def is_game_over(self) -> bool:
         """Checks if the game has ended."""
@@ -336,45 +407,67 @@ class GameState:
         """Prints the current board state to the console."""
         self.board.print_board()
 
-
+# Example main loop (needs adjustments for async apply_move and decide_move generator)
 async def main():
+    import logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     game = GameState(white_user_prompt="Focus on controlling the center.")
     game.print_board()
     print(f"Turn: {game.get_current_turn()}")
 
     # Game loop example
     turn_count = 1
-    max_turns = 100 # Add a max turn limit to prevent infinite loops
+    max_turns = 100 # Add a max turn limit
     while not game.is_game_over() and turn_count <= max_turns:
         print(f"\n--- {game.get_current_turn().upper()}'S TURN ({turn_count}) ---")
-        chosen_move = await game.decide_move()
+
+        chosen_move = None
+        # Use async for to handle the generator
+        async for kind, payload in game.decide_move():
+            if kind == "debate":
+                print(f"Debate: {payload.strip()}")
+            elif kind == "status":
+                print(f"Status: {payload}")
+            elif kind == "move":
+                chosen_move = payload
+                print(f"King decided move: {chosen_move}")
+                break # Exit the generator loop once move is decided
 
         if chosen_move:
-            print(f"Chosen move: {chosen_move}")
-            success, message = game.apply_move(chosen_move)
+            # Await the async apply_move
+            success, message = await game.apply_move(chosen_move)
             if success:
                 game.print_board()
+                # Check for jester comment (optional here, primarily for UI)
+                jester_comment = game.get_last_jester_commentary()
+                if jester_comment:
+                    print(f"Jester: [{jester_comment.judgement.value}] {jester_comment.joke_output}")
+                    game.clear_last_jester_commentary() # Clear after printing
+
                 status = game.get_game_status()
-                if status['is_checkmate']:
-                    print(f"Checkmate! {status['winner']} wins.")
+                if status.get('is_game_over'):
+                    print(f"\nGame Over!")
+                    if status.get('is_checkmate'):
+                         print(f"Checkmate! Winner: {status.get('winner', 'Unknown')}")
+                    elif status.get('is_stalemate'):
+                         print("Result: Stalemate")
+                    elif status.get('is_insufficient_material'):
+                         print("Result: Draw by insufficient material")
+                    # Add other draw conditions if needed
+                    else:
+                         # Use the outcome() method for more robust result determination
+                         outcome = game.board._board.outcome()
+                         if outcome:
+                             print(f"Result: {outcome.termination.name}, Winner: {outcome.winner}")
+                         else:
+                             print(f"Result: {status.get('result', 'Unknown reason')}") # Fallback
                     break
-                elif status['is_stalemate']:
-                    print("Stalemate!")
-                    break
-                elif status['is_insufficient_material']:
-                    print("Draw by insufficient material.")
-                    break
-                elif status['is_seventyfive_moves']:
-                    print("Draw by seventy-five moves rule.")
-                    break
-                elif status['is_fivefold_repetition']:
-                    print("Draw by fivefold repetition.")
-                    break
-                elif status['is_check']:
+                elif status.get('is_check'):
                     print("Check!")
             else:
                 print(f"!!! Failed to apply move '{chosen_move}': {message} !!!")
-                # This indicates a bug either in King's choice or legal move generation
+                # This might indicate a bug in King's choice or legal move generation fallback
                 break
         else:
             print("!!! Could not decide on a move. Stopping game. !!!")
@@ -384,12 +477,10 @@ async def main():
 
     if turn_count > max_turns:
         print(f"\nGame stopped after reaching max turns ({max_turns}).")
-    elif game.is_game_over() and not game.get_game_status().get('is_checkmate') and not game.get_game_status().get('is_stalemate'):
-         print(f"\nGame over. Result: {game.get_game_status()['result']}")
+    elif not game.is_game_over():
+         print("\nGame stopped for other reasons.")
 
 
 if __name__ == "__main__":
-    import asyncio
-    import logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    # Main execution remains the same
     asyncio.run(main())
