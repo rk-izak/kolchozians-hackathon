@@ -1,12 +1,13 @@
 import asyncio
+import logging
 import random
-import gradio as gr
-from functools import partial
 from enum import Enum
-from pathlib import Path
+from functools import partial
 
-from .game_state import GameState, SHORT_PIECE_MAP, EFFICIENT_MODEL
+import gradio as gr
+
 from .game_agents.prompt_agent import PromptAgent
+from .game_state import EFFICIENT_MODEL, SHORT_PIECE_MAP, GameState
 
 
 class GameMode(Enum):
@@ -514,6 +515,8 @@ def main():
                     health_white,
                     health_black,
                     jester_box,
+                    prompt_img,
+                    prompt,
                 ],
                 queue=True,
             )
