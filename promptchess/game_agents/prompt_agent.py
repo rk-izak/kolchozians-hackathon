@@ -1,21 +1,25 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import chess
 from agents import Agent, Runner
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from ..chessboard import FRACTION_PIECE_TYPES, PIECE_COLOURS, ChessBoard
-from ..utils import log_info, log_warning, log_error
+from ..chessboard import PIECE_COLOURS, ChessBoard
+from ..utils import log_error, log_info, log_warning
 
 
-class PromptSet(BaseModel):
-    prompts: Dict[str, str]
+class SinglePromptUpdate(BaseModel):
+    """Defines the output structure for updating a single fraction's prompt."""
+    piece_type: str = Field(..., description="The lowercase name of the piece type to update (e.g., 'pawn', 'knight').")
+    new_prompt: str = Field(..., description="The new concise prompt for the chosen piece type.")
+    reasoning: str = Field(..., description="Brief explanation for choosing this piece type and prompt.")
 
 
 class PromptAgent:
     """
-    An LLM agent that plays PromptChess by generating prompts for its fractions
+    An LLM agent that plays PromptChess by generating a prompt update
+    for a single chosen fraction each turn.
     """
     def __init__(self, color: str, model: str, behaviour_file: Path | str | None = None):
         """
@@ -42,206 +46,107 @@ class PromptAgent:
             except Exception as e:
                 log_warning(f"Error reading behaviour file {behaviour_file}: {e}")
 
-        # Construct the detailed agent prompt
+        # Construct the detailed agent prompt - REVISED INPUTS/THINKING
         self.prompt = (
-            f"You are a Chess Strategy AI that generates tactical prompts for individual chess piece types (fractions) of the {self.color} side in a game called PromptChess.\n\n"
+            f"You are a Chess Strategy AI playing PromptChess for the {self.color} side. Your task is to strategically update the prompt for **one** of your active piece fractions per turn.\n\n"
             "Your personality/strategy:\n"
             f"{behaviour_text if behaviour_text else 'You are a balanced and adaptable strategist.'}\n\n"
             "ROLE & GOAL:\n"
-            f"– Analyze the current chess board state and the current prompts for both {self.color} (your side) and the opponent.\n"
-            f"– Your goal is to generate a *new*, concise, and strategically effective prompt for **each** of the currently active {self.color} fraction types (pawn, knight, bishop, rook, queen).\n"
-            "– These prompts will guide the individual fractions in their 'debate' phase before a final move is selected by the King.\n"
-            "– The prompts should reflect a coherent strategy for the current turn, considering board control, piece development, king safety, and potential threats/opportunities.\n\n"
+            f"– Analyze the current chess board state and the current prompts for your ({self.color}) side.\n"
+            f"– Decide which **single active {self.color} fraction type** (pawn, knight, bishop, rook, or queen) would benefit most from a new instruction for this turn.\n"
+            "– Generate a *new*, concise, and strategically effective prompt (1-2 sentences max) for **only that chosen piece type**.\n"
+            f"– Provide a brief reasoning for your choice of piece type and the new prompt.\n"
+            "– The prompts influence how fractions argue for moves in a later 'debate' phase.\n\n"
             "INPUTS:\n"
             "You will receive:\n"
             f"1. *Current Turn*: Whose turn it is.\n"
             f"2. *Board State*: FEN string and a 2D ASCII representation.\n"
             f"3. *Active {self.color} Pieces*: List of your piece types currently on the board.\n"
             f"4. *Current {self.color} Prompts*: The instructions currently assigned to your active piece types.\n"
-            f"5. *Current Opponent Prompts*: The instructions currently assigned to the opponent's active piece types (for context).\n\n"
+            "\n"
             "THINKING PROCEDURE (silent):\n"
-            f"A. Assess the overall board situation: material balance, king safety ({self.color} and opponent), central control, open lines, threats.\n"
-            f"B. Analyze the opponent's current prompts: What might their strategy be? What threats do their prompts suggest?\n"
-            f"C. Review your own current prompts: Are they still relevant? Are they leading to good suggestions?\n"
-            f"D. Formulate a strategic plan for {self.color} for this turn.\n"
-            f"E. For **each** active {self.color} piece type (pawn, knight, bishop, rook, queen), generate a *new*, concise prompt (1-2 sentences max) that directs it according to your strategic plan.\n"
-            "   – Example Pawn Prompt: 'Focus on controlling d5 and supporting the knight attack.'\n"
-            "   – Example Knight Prompt: 'Find an outpost on f5 or attack the weak pawn on c6.'\n\n"
-            "OUTPUT FORMAT:\n"
-            "– Provide your response as a JSON object where keys are the lowercase piece types ('pawn', 'knight', 'bishop', 'rook', 'queen') and values are the corresponding new prompt strings.\n"
-            f"– **Only include entries for the active {self.color} piece types listed in the input.**\n"
-            "– Example Output: ```json\n{\"pawn\": \"Advance on the kingside.\", \"knight\": \"Target the f7 square.\"}\n```\n"
+            f"A. Assess the overall board situation: material balance, king safety ({self.color} and opponent), central control, open lines, threats, key squares.\n"
+            f"B. Review your own current prompts for all active pieces: Which seem outdated, ineffective, or less relevant to the current situation?\n"
+            f"C. Identify the piece type where a new, targeted prompt could have the most positive impact on the upcoming move selection (e.g., coordinating an attack, shoring up defense, exploiting a weakness).\n"
+            f"D. Formulate the *new*, concise prompt for the chosen piece type.\n"
+            f"E. Write a brief justification for your choice.\n"
         )
 
-        self.agent = Agent(
-            name=f'{self.color.capitalize()} PromptAgent',
-            model=model,
-            instructions=self.prompt,
-            output_type=PromptSet
-        )
-        log_info(f"Initialized {self.color} PromptAgent with model {model}.")
+        if Agent is None:
+             log_error("Cannot initialize PromptAgent: 'agents' library components are missing.")
+             self.agent = None
+        else:
+            self.agent = Agent(
+                name=f'{self.color.capitalize()} PromptAgent',
+                model=model,
+                instructions=self.prompt,
+                output_type=SinglePromptUpdate
+            )
+            log_info(f"Initialized {self.color} PromptAgent with model {model}.")
 
 
-    async def generate_prompts(self, board: ChessBoard, current_prompts_self: Dict[str, str], current_prompts_opponent: Dict[str, str]) -> Dict[str, str]:
+    async def decide_single_prompt_update(self, board: ChessBoard, current_prompts_self: Dict[str, str]) -> Optional[SinglePromptUpdate]:
         """
-        Analyzes the board and current prompts to generate new prompts for active fractions.
+        Analyzes the board and current prompts to decide on a single prompt update.
 
         Args:
             board: The current ChessBoard object.
             current_prompts_self: Dict of current prompts for this agent's color.
-            current_prompts_opponent: Dict of current prompts for the opponent's color.
-
         Returns:
-            A dictionary mapping active piece type to its newly generated prompt string.
+            A SinglePromptUpdate object containing the chosen piece type, new prompt,
+            and reasoning, or None if an error occurs or no update is decided.
         """
         if self.agent is None or Runner is None:
             log_error(f"PromptAgent ({self.color}) cannot generate prompts; 'agents' library missing.")
-            return {} # Return empty dict if agent wasn't initialized
+            return None
 
-        log_info(f"PromptAgent ({self.color}) generating prompts...")
+        log_info(f"PromptAgent ({self.color}) deciding single prompt update...")
         board_fen = board.get_fen()
         board_2d = board.get_board_2d_string()
         turn_color_str = "white" if board.get_turn_color() == chess.WHITE else "black"
         active_pieces_map = board.get_active_pieces().get(self.color, {})
         active_piece_types = [ptype for ptype, is_active in active_pieces_map.items() if is_active]
 
+        if not active_piece_types:
+            log_info(f"PromptAgent ({self.color}) has no active pieces to update.")
+            return None
+
         # Filter current prompts to only include active types for clarity in the input
         filtered_prompts_self = {ptype: current_prompts_self.get(ptype, "N/A") for ptype in active_piece_types}
-        # Opponent prompts can be passed entirely for context
-        opponent_color = 'black' if self.color == 'white' else 'white'
-        active_opponent_map = board.get_active_pieces().get(opponent_color, {})
-        filtered_prompts_opponent = {ptype: current_prompts_opponent.get(ptype, "N/A")
-                                      for ptype, is_active in active_opponent_map.items() if is_active}
-
 
         # Format the input for the LLM agent
         agent_input = (
             f"Current Turn: {turn_color_str}\n\n"
             f"Board State:\nFEN: {board_fen}\n{board_2d}\n\n"
-            f"Active {self.color} Pieces: {', '.join(active_piece_types) if active_piece_types else 'None'}\n\n"
+            f"Active {self.color} Pieces: {', '.join(active_piece_types)}\n\n"
             f"Current {self.color} Prompts:\n" +
             "\n".join([f"- {ptype.capitalize()}: {prompt}" for ptype, prompt in filtered_prompts_self.items()]) + "\n\n"
-            f"Current Opponent ({opponent_color}) Prompts:\n" +
-            "\n".join([f"- {ptype.capitalize()}: {prompt}" for ptype, prompt in filtered_prompts_opponent.items()]) + "\n\n"
-            f"Generate the new JSON prompts for the active {self.color} pieces based on the analysis."
+            f"Based on your analysis, provide the JSON output for the single prompt update (piece_type, new_prompt, reasoning)."
         )
 
-        log_info(f"PromptAgent ({self.color}) input prepared:\n{agent_input}")
+        log_info(f"PromptAgent ({self.color}) input prepared for single update decision.")
 
         try:
-            # Run the agent using the 'agents' library Runner
+            log_info(f"PromptAgent ({self.color}) calling Runner.run...")
             run_result = await Runner.run(
                 self.agent,
                 agent_input,
             )
-            # Assuming run_result.final_output gives the dictionary directly or a JSON string
-            # If it requires parsing via a Pydantic model, use:
-            # final_output = run_result.final_output_as(PromptSet)
-            # new_prompts = final_output.prompts
-            new_prompts = run_result.final_output
+            # Retrieve the output parsed as SinglePromptUpdate
+            single_update = run_result.final_output_as(SinglePromptUpdate)
 
-            if not isinstance(new_prompts, dict):
-                 log_warning(f"PromptAgent ({self.color}) received non-dict output: {type(new_prompts)}. Attempting to parse if string.")
-                 # Attempt to parse if it looks like JSON string (basic check)
-                 if isinstance(new_prompts, str) and new_prompts.strip().startswith('{'):
-                     import json
-                     try:
-                         new_prompts = json.loads(new_prompts)
-                         if not isinstance(new_prompts, dict):
-                             raise ValueError("Parsed JSON is not a dictionary.")
-                     except (json.JSONDecodeError, ValueError) as e:
-                         log_error(f"PromptAgent ({self.color}) failed to parse output as JSON dictionary: {e}\nOutput was: {new_prompts}")
-                         return {} # Failed parsing
-                 else:
-                     log_error(f"PromptAgent ({self.color}) received unexpected output format.")
-                     return {} # Unexpected format
+            if not single_update:
+                 log_error(f"PromptAgent ({self.color}) received no output or failed parsing for single update.")
+                 return None
 
+            # Validate the chosen piece type
+            if single_update.piece_type not in active_piece_types:
+                log_warning(f"PromptAgent ({self.color}) chose an inactive or invalid piece type: '{single_update.piece_type}'. Active: {active_piece_types}")
+                return None
 
-            log_info(f"PromptAgent ({self.color}) successfully generated prompts: {new_prompts}")
-            # Optional: Validate that keys are valid piece types and values are strings
-            validated_prompts = {}
-            for key, value in new_prompts.items():
-                if key in FRACTION_PIECE_TYPES and isinstance(value, str):
-                     validated_prompts[key] = value
-                else:
-                    log_warning(f"PromptAgent ({self.color}) generated invalid entry: key='{key}', value_type='{type(value)}'. Skipping.")
-            return validated_prompts
+            log_info(f"PromptAgent ({self.color}) successfully decided single update for '{single_update.piece_type}': '{single_update.new_prompt}'. Reasoning: {single_update.reasoning}")
+            return single_update
 
         except Exception as e:
-            log_error(f"PromptAgent ({self.color}) failed during generation: {e}", exc_info=True)
-            return {} # Return empty on error
-
-
-# Update Example Usage
-async def test_prompt_agent():
-    # Requires GameState to get current prompts easily
-    # Let's simulate it for now
-    from ..game_state import GameState  # Import here for testing scope
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # Initialize GameState to get initial prompts
-    game = GameState()
-    board_obj = game.board
-
-    # Create agents (assuming GEMINI_MODEL is defined or use a placeholder)
-    try:
-        white_agent = PromptAgent(color='white', model="gemini-1.5-flash-latest", behaviour_file="behaviours/balanced.txt") # Example model
-        black_agent = PromptAgent(color='black', model="gemini-1.5-flash-latest", behaviour_file="behaviours/aggressive.txt")
-    except NameError:
-         print("Agent or Runner likely missing, cannot run test.")
-         return
-    except Exception as e:
-        print(f"Error initializing agents: {e}")
-        return
-
-
-    # --- Turn 1 (White) ---
-    print("\n--- Turn 1: White Agent Deciding Prompts ---")
-    # Get current prompts (initially default/empty from GameState setup)
-    current_prompts_w = {ptype: game.get_fraction_user_prompt('white', ptype) or "" for ptype in FRACTION_PIECE_TYPES}
-    current_prompts_b = {ptype: game.get_fraction_user_prompt('black', ptype) or "" for ptype in FRACTION_PIECE_TYPES}
-
-    new_prompts_white = await white_agent.generate_prompts(board_obj, current_prompts_w, current_prompts_b)
-    print("White Agent Generated Prompts:")
-    for piece, prompt in new_prompts_white.items():
-        print(f"  {piece.capitalize()}: {prompt}")
-        # Update GameState with new prompts
-        game.update_fraction_prompt('white', piece, prompt)
-
-    # Assume White makes a move based on these prompts (using game.decide_move logic)
-    # Simulate move for testing prompt generation
-    move_made = "e2e4"
-    success, _ = game.apply_move(move_made)
-    if not success: print(f"Failed to apply simulated move {move_made}"); return
-    print(f"\nSimulated White Move: {move_made}")
-    game.print_board()
-
-
-    # --- Turn 2 (Black) ---
-    print("\n--- Turn 2: Black Agent Deciding Prompts ---")
-    # Get current prompts (White's were updated, Black's are still initial)
-    current_prompts_w = {ptype: game.get_fraction_user_prompt('white', ptype) or "" for ptype in FRACTION_PIECE_TYPES}
-    current_prompts_b = {ptype: game.get_fraction_user_prompt('black', ptype) or "" for ptype in FRACTION_PIECE_TYPES}
-
-    new_prompts_black = await black_agent.generate_prompts(board_obj, current_prompts_b, current_prompts_w)
-    print("Black Agent Generated Prompts:")
-    for piece, prompt in new_prompts_black.items():
-        print(f"  {piece.capitalize()}: {prompt}")
-        game.update_fraction_prompt('black', piece, prompt)
-
-    # Assume Black makes move...
-
-
-if __name__ == "__main__":
-    import asyncio
-    import logging
-
-    # Ensure game_state methods used in test are available
-    # Add basic config for logging used within the class
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # Assuming the 'agents' library is structured such that Agent/Runner are available
-    if Agent is not None and Runner is not None:
-         asyncio.run(test_prompt_agent())
-    else:
-        print("Cannot run test_prompt_agent as Agent/Runner components are missing.")
+            log_error(f"PromptAgent ({self.color}) failed during single prompt update decision: {e}", exc_info=True)
+            return None
