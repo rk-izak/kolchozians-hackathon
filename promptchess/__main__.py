@@ -151,18 +151,61 @@ def get_cell_properties(rank: int, file: int, piece: str | None, selected_piece:
     }
 
 
+# Helper function to clear the fraction and prompt displays
+def clear_prompt_displays():
+    return [
+        gr.update(value=""),  # prompt_img
+        gr.update(value=""),  # prompt
+    ]
+
+
 async def agent_move(prompt_updates=None):
     """Handle agent move if it's an agent's turn"""
     current_turn = GAME.board.get_turn()
+    agent = WHITE_AGENT if current_turn == "white" else BLACK_AGENT
+    
     thinking_text = ""
+    
+    # First, update a prompt if needed
+    if prompt_updates is None and CURRENT_GAME_MODE != GameMode.HUMAN_VS_HUMAN:
+        thinking_text += f"Agent ({current_turn}) is deciding on a prompt update...\n"
+        # Clear prompt displays immediately
+        prompt_clears = clear_prompt_displays()
+        dummy_updates = [gr.update()] * 64
+        yield dummy_updates + [
+            gr.update(),                               # turn
+            gr.update(value=thinking_text),            # thinking
+            gr.update(),                               # white health
+            gr.update(),                               # black health
+            gr.update(),                               # jester slot
+        ] + prompt_clears
+        
+        # Get current prompts for the agent
+        current_prompts = {}
+        for piece_type in ["pawn", "knight", "bishop", "rook", "queen"]:
+            prompt = GAME.get_fraction_user_prompt(current_turn, piece_type)
+            if prompt:
+                current_prompts[piece_type] = prompt
+        
+        try:
+            prompt_updates = await agent.decide_single_prompt_update(
+                GAME.board, current_prompts
+            )
+            if prompt_updates:
+                thinking_text += f"Agent ({current_turn}) updated {prompt_updates.piece_type} prompt: {prompt_updates.new_prompt}\n"
+                thinking_text += f"Reasoning: {prompt_updates.reasoning}\n\n"
+        except Exception as e:
+            thinking_text += f"Error getting prompt update: {e}\n\n"
     
     # If we received prompt updates from the agent, apply them
     if prompt_updates:
         piece_type = prompt_updates.piece_type
         new_prompt = prompt_updates.new_prompt
         GAME.update_fraction_prompt(current_turn, piece_type, new_prompt)
-        thinking_text += f"Agent updated {piece_type} prompt: {new_prompt}\n\n"
+        if "updated" not in thinking_text:
+            thinking_text += f"Agent ({current_turn}) updated {piece_type} prompt: {new_prompt}\n\n"
     
+    thinking_text += f"Agent ({current_turn}) is deciding on a move...\n"
     # Get the agent to decide the move
     async for kind, payload in GAME.decide_move():
         # Live-streamed "thinking" lines
@@ -175,7 +218,7 @@ async def agent_move(prompt_updates=None):
                 gr.update(),                          # white health
                 gr.update(),                          # black health
                 gr.update(),                          # jester slot
-            ]
+            ] + clear_prompt_displays()
             
         # King chose a move
         elif kind == "move":
@@ -212,7 +255,7 @@ async def agent_move(prompt_updates=None):
                 gr.update(value=white_hp),             # white health
                 gr.update(value=black_hp),             # black health
                 gr.update(value=popup_html, visible=True),
-            ]
+            ] + clear_prompt_displays()
             yield outputs
             
             # Keep jester visible for 5s
@@ -220,6 +263,7 @@ async def agent_move(prompt_updates=None):
             yield (
                 [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
                 + [gr.update(visible=False)]           # hide jester
+                + clear_prompt_displays()
             )
             
             # Check if the next turn is also an agent's turn
@@ -232,23 +276,7 @@ async def agent_move(prompt_updates=None):
                 # Trigger the next agent move
                 next_agent = WHITE_AGENT if next_turn == "white" else BLACK_AGENT
                 if next_agent:
-                    # First, update a prompt if needed
-                    current_prompts = {}
-                    for piece_type in ["pawn", "knight", "bishop", "rook", "queen"]:
-                        prompt = GAME.get_fraction_user_prompt(next_turn, piece_type)
-                        if prompt:
-                            current_prompts[piece_type] = prompt
-                    
-                    prompt_update = None
-                    try:
-                        prompt_update = await next_agent.decide_single_prompt_update(
-                            GAME.board, current_prompts
-                        )
-                    except Exception as e:
-                        thinking_text += f"Error getting prompt update: {e}\n"
-                    
-                    # Now make the move using the updated prompt
-                    async for result in agent_move(prompt_update):
+                    async for result in agent_move():
                         yield result
 
 
@@ -256,13 +284,16 @@ async def make_move():
     """Handle human move or trigger agent move if it's an agent's turn"""
     current_turn = GAME.board.get_turn()
     
+    # Clear the instruction and fraction displays
+    prompt_clears = clear_prompt_displays()
+    
     # Check if it's an agent's turn
     if (current_turn == "white" and WHITE_AGENT is not None) or (current_turn == "black" and BLACK_AGENT is not None):
         async for result in agent_move():
             yield result
         return
         
-    # Human move logic (unchanged from original)
+    # Human move logic
     thinking_text = ""
     async for kind, payload in GAME.decide_move():
         # ───────── live-streamed "thinking" lines ──────────
@@ -275,7 +306,7 @@ async def make_move():
                 gr.update(),                          # white health
                 gr.update(),                          # black health
                 gr.update(),                          # jester slot
-            ]
+            ] + prompt_clears
 
         # ───────── King finally chose a move ──────────
         elif kind == "move":
@@ -312,7 +343,7 @@ async def make_move():
                 gr.update(value=white_hp),             # white health
                 gr.update(value=black_hp),             # black health
                 gr.update(value=popup_html, visible=True),
-            ]
+            ] + prompt_clears
             yield outputs
 
             # keep it visible 5 s
@@ -320,6 +351,7 @@ async def make_move():
             yield (
                 [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
                 + [gr.update(visible=False)]           # hide jester
+                + prompt_clears
             )
             
             # If the next turn is an agent's turn, trigger it
@@ -331,7 +363,7 @@ async def make_move():
 
 def choose_piece(row, col):
     if GAME is None:
-        return [gr.update()] * 67  # Return empty updates if game not initialized
+        return [gr.update()] * (3 + 64)  # Return empty updates if game not initialized
         
     piece = GAME.board.piece_at(7 - col, row)
     assert piece is not None
@@ -392,7 +424,11 @@ def make_board(selected_piece, prompt_img, prompt):
                 with gr.Column(min_width=70, scale=0):
                     for rank in range(7, -1, -1):
                         buttons.append(
-                            gr.Button(**get_cell_properties(rank, file, None))  # Initialize with empty board
+                            gr.Button(
+                                value="",
+                                interactive=False,
+                                elem_classes=["cell", ["cell-black-bg", "cell-white-bg"][(file + rank) % 2]]
+                            )
                         )
 
         with gr.Row():
