@@ -210,65 +210,86 @@ class GameState:
         log_info(f"Received suggestions for {current_turn} from {active_fraction_count} active fractions.")
         return suggestions
 
-    async def decide_move(self) -> str | None:
+    def get_active_fractions(self, colour: str | None = None) -> list[ChessFraction]:
         """
-        Orchestrates getting fraction suggestions and using the King agent
-        to decide the final move for the current player.
+        Return a list with the *agents* of all fractions that are still on
+        the board for the requested colour.
 
-        Returns:
-            The chosen move in SAN notation, or None if a decision cannot be made.
+        Args
+        ----
+        colour   "white", "black" or None (→ use side to move)
+
+        Example
+        -------
+        active_white = game.get_active_fractions("white")
         """
+        if colour is None:
+            colour = self.get_current_turn()          # side to move
+
+        if colour not in self.fractions:
+            return []
+
+        active = []
+        for piece_key, data in self.fractions[colour].items():
+            if data["is_active"]:
+                active.append(data["agent"])          # store the *agent*
+        return active
+
+    async def decide_move(self):
+        """
+        Async-generator version of `decide_move`.
+
+        Yields:
+            ("debate",  <str>)          – more text to append to the debate
+            ("status",  <str>)          – e.g. "analysing king reply ..."
+            ("move",    <san_move>)     – final choice, search finished
+        """
+
         if self.is_game_over():
-            log_info("Game is over, no move to decide.")
-            return None
+            yield ("status", "Game is already over.")
+            return
 
-        current_turn = self.get_current_turn()
-        log_info(f"Deciding move for {current_turn}...")
+        turn = self.get_current_turn()
+        yield ("status", f"## Deciding move for {turn} …")
 
-        # 1. Get suggestions from *active* fractions
-        suggestions = await self.get_fraction_suggestions()
+        # ── 1. Ask every *active* fraction, stream its answer ─────────
+        debate_lines = []
+        active_fractions = self.get_active_fractions()
 
-        # 2. Format suggestions into a debate string
-        if suggestions:
-             debate = "\n".join([f"{piece.capitalize()}: {suggestion}" for piece, suggestion in suggestions.items() if not suggestion.startswith('Error')]) # Exclude errors from debate?
-        else:
-             debate = "No suggestions available from active fractions."
-        log_info(f"Formatted debate for {current_turn} King:\n{debate}")
+        # if get_fraction_suggestions() already does everything at once,
+        # replace the `for`-loop by your existing call and yield once.
+        for frac in active_fractions:
+            try:
+                sugg = await frac.suggest_move(self.board)
+            except Exception as e:
+                sugg = f"Error: {e}"
 
-        # 3. Get board state and legal moves
-        board_fen = self.get_board_state()
-        board_2d = self.board.get_board_2d_string() # Get 2D board string
-        legal_moves = self.get_legal_moves()
-        if not legal_moves:
-             log_warning(f"No legal moves available for {current_turn}. Cannot decide move.")
-             return None
+            line = f"### {frac.name.capitalize()}: {sugg}"
+            debate_lines.append(line)
+            yield ("debate", f"__{frac.name.capitalize()}__: {sugg}\n\n")
 
-        # 4. Call the King agent
-        king_agent = self.kings[current_turn]
-        try:
-            # Pass both FEN and 2D board string to King agent
-            king_decision = await king_agent.call(debate, board_fen, board_2d, legal_moves)
-            chosen_move = king_decision.move
-            log_info(f"{current_turn} King chose move: {chosen_move} (Reasoning: {king_decision.reasoning})")
+        debate_text = "\n".join(debate_lines)
+        yield ("status", "## King is thinking …")
 
-            # 5. Basic validation
-            if chosen_move not in legal_moves:
-                log_warning(f"King chose an illegal move '{chosen_move}'. Legal: {legal_moves}. Trying to find a fallback.")
-                if legal_moves:
-                     fallback_move = legal_moves[0]
-                     log_warning(f"Falling back to first legal move: {fallback_move}")
-                     return fallback_move
-                else:
-                     return None
+        king = self.kings[turn]
+        decision = await king.call(
+            debate_text,
+            self.get_board_state(),          # FEN
+            self.board.get_board_2d_string(),
+            self.get_legal_moves()
+        )
+        yield ("debate", decision.reasoning)
 
-            return chosen_move
+        chosen_move = decision.move
+        self.decided_move = chosen_move
 
-        except Exception as e:
-            log_error(f"Error during King agent call for {current_turn}: {e}")
-            if legal_moves:
-                 log_warning("Falling back to first legal move due to King error.")
-                 return legal_moves[0]
-            return None
+        # basic legality check
+        if chosen_move not in self.get_legal_moves():
+            chosen_move = self.get_legal_moves()[0]
+            self.decided_move = chosen_move
+            yield ("status", "Chosen move was illegal – taking first legal move.")
+
+        yield ("move", chosen_move)          # <── final yield
 
     def apply_move(self, move_san: str) -> tuple[bool, str]:
         """
