@@ -116,7 +116,7 @@ class GameState:
             for piece_key in FRACTION_PIECE_TYPES:
                 fraction_name = f"{color_name}_{piece_key}"
                 agent = ChessFaction(
-                    model=SMALL_MODEL,
+                    model=EFFICIENT_MODEL,
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
                     user_prompt=user_prompt,
