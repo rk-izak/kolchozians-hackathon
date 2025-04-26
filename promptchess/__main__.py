@@ -22,6 +22,9 @@ PIECES = {
 }
 
 CSS = """
+body {
+    font-family: Arial, sans-serif;
+}
 .cell {
     width: 70px !important;
     height: 70px !important;
@@ -68,6 +71,14 @@ button.cell:disabled,
 
 /* —— Game mode selection —— */
 .mode-selector { margin-bottom: 20px; }
+
+/* —— Ruleset list font —— */
+.ruleset-list {
+  font-size: 30px;
+}
+
+/* —— Legend symbol sizing —— */
+.legend-symbol { font-size: 32px; text-align: center; }
 """
 
 GAME = None
@@ -78,37 +89,31 @@ CURRENT_GAME_MODE = GameMode.HUMAN_VS_HUMAN
 
 def initialize_game(game_mode):
     global GAME, WHITE_AGENT, BLACK_AGENT, CURRENT_GAME_MODE
-    
+
     CURRENT_GAME_MODE = GameMode(game_mode)
-    
+
     # Initialize agents based on selected mode
     if CURRENT_GAME_MODE == GameMode.HUMAN_VS_AGENT:
-        # Create AI agent for black
         BLACK_AGENT = PromptAgent(color="black", model=EFFICIENT_MODEL)
         WHITE_AGENT = None
     elif CURRENT_GAME_MODE == GameMode.AGENT_VS_AGENT:
-        # Create AI agents for both sides
         WHITE_AGENT = PromptAgent(color="white", model=EFFICIENT_MODEL)
         BLACK_AGENT = PromptAgent(color="black", model=EFFICIENT_MODEL)
     else:
-        # Human vs Human - no agents needed
         WHITE_AGENT = None
         BLACK_AGENT = None
-    
-    # Initialize the game
+
     GAME = GameState()
-    
-    # Create board updates with the initial positions
+
     board_updates = []
     for r in range(8):
         for c in range(7, -1, -1):
             board_updates.append(
                 gr.update(**get_cell_properties(r, c, GAME.board.piece_at(c, r)))
             )
-    
-    # Return updates for UI including board pieces
+
     return board_updates + [
-        gr.update(value=GAME.board.get_turn()),  # turn
+        gr.update(value=GAME.board.get_turn().title()),  # turn (capitalized)
         gr.update(value="Game initialized with mode: " + game_mode),  # thinking
         gr.update(value=49),  # white health
         gr.update(value=49),  # black health
@@ -123,7 +128,6 @@ def get_cell_properties(rank: int, file: int, piece: str | None, selected_piece:
         if selected_piece is not None and piece == selected_piece:
             classes.append("cell-border")
 
-    # Determine if the piece should be interactive
     if piece is None:
         interactive = False
     elif piece.lower() == "k":
@@ -131,14 +135,12 @@ def get_cell_properties(rank: int, file: int, piece: str | None, selected_piece:
     else:
         current_turn = GAME.board.get_turn()
         is_user_turn = True
-        
-        # Check if it's an agent's turn
+
         if current_turn == "white" and WHITE_AGENT is not None:
             is_user_turn = False
         elif current_turn == "black" and BLACK_AGENT is not None:
             is_user_turn = False
-            
-        # Piece is interactive if it's user's turn and piece color matches turn
+
         interactive = (
             is_user_turn and
             (current_turn == "white" and piece.isupper() or
@@ -152,7 +154,6 @@ def get_cell_properties(rank: int, file: int, piece: str | None, selected_piece:
     }
 
 
-# Helper function to clear the fraction and prompt displays
 def clear_prompt_displays():
     return [
         gr.update(value=""),  # prompt_img
@@ -161,16 +162,12 @@ def clear_prompt_displays():
 
 
 async def agent_move(prompt_updates=None):
-    """Handle agent move if it's an agent's turn"""
     current_turn = GAME.board.get_turn()
     agent = WHITE_AGENT if current_turn == "white" else BLACK_AGENT
-    
     thinking_text = ""
-    
-    # First, update a prompt if needed
+
     if prompt_updates is None and CURRENT_GAME_MODE != GameMode.HUMAN_VS_HUMAN:
-        thinking_text += f"Agent ({current_turn}) is deciding on a prompt update...\n"
-        # Clear prompt displays immediately
+        thinking_text += f"Agent ({current_turn.title()}) is deciding on a prompt update...\n"
         prompt_clears = clear_prompt_displays()
         dummy_updates = [gr.update()] * 64
         yield dummy_updates + [
@@ -180,36 +177,32 @@ async def agent_move(prompt_updates=None):
             gr.update(),                               # black health
             gr.update(),                               # jester slot
         ] + prompt_clears
-        
-        # Get current prompts for the agent
+
         current_prompts = {}
         for piece_type in ["pawn", "knight", "bishop", "rook", "queen"]:
             prompt = GAME.get_fraction_user_prompt(current_turn, piece_type)
             if prompt:
                 current_prompts[piece_type] = prompt
-        
+
         try:
             prompt_updates = await agent.decide_single_prompt_update(
                 GAME.board, current_prompts
             )
             if prompt_updates:
-                thinking_text += f"Agent ({current_turn}) updated {prompt_updates.piece_type} prompt: {prompt_updates.new_prompt}\n"
+                thinking_text += f"Agent ({current_turn.title()}) updated {prompt_updates.piece_type} prompt: {prompt_updates.new_prompt}\n"
                 thinking_text += f"Reasoning: {prompt_updates.reasoning}\n\n"
         except Exception as e:
             thinking_text += f"Error getting prompt update: {e}\n\n"
-    
-    # If we received prompt updates from the agent, apply them
+
     if prompt_updates:
         piece_type = prompt_updates.piece_type
         new_prompt = prompt_updates.new_prompt
         GAME.update_fraction_prompt(current_turn, piece_type, new_prompt)
         if "updated" not in thinking_text:
-            thinking_text += f"Agent ({current_turn}) updated {piece_type} prompt: {new_prompt}\n\n"
-    
-    thinking_text += f"Agent ({current_turn}) is deciding on a move...\n"
-    # Get the agent to decide the move
+            thinking_text += f"Agent ({current_turn.title()}) updated {piece_type} prompt: {new_prompt}\n\n"
+
+    thinking_text += f"Agent ({current_turn.title()}) is deciding on a move...\n"
     async for kind, payload in GAME.decide_move():
-        # Live-streamed "thinking" lines
         if kind in ("debate", "status"):
             thinking_text += payload + "\n"
             dummy_updates = [gr.update()] * 64
@@ -220,84 +213,59 @@ async def agent_move(prompt_updates=None):
                 gr.update(),                          # black health
                 gr.update(),                          # jester slot
             ] + clear_prompt_displays()
-            
-        # King chose a move
         elif kind == "move":
             move = payload
             GAME.board.apply_move(move)
-            
             white_hp, black_hp = GAME.get_health_scores()
             jester = await GAME.get_jester_comment()
-            
             popup_body = (
                 f"<div>"
                 f"🃏 <b>{jester.joke_output}</b><br/>"
                 f"<i>{jester.judgement.value.title()}</i>"
                 f"</div>"
             )
-            # Random position (10–80 vh, 5–70 vw)
             top_vh, left_vw = random.randint(10, 80), random.randint(5, 70)
             popup_html = (
-                f'<div class="jester-popup" '
-                f'style="top:{top_vh}vh; left:{left_vw}vw;">'
+                f'<div class="jester-popup" style="top:{top_vh}vh; left:{left_vw}vw;">'
                 f"{popup_body}</div>"
             )
-            
             board_updates = []
             for r in range(8):
                 for c in range(7, -1, -1):
                     board_updates.append(
                         gr.update(**get_cell_properties(r, c, GAME.board.piece_at(c, r)))
                     )
-                    
             outputs = board_updates + [
-                GAME.board.get_turn(),                 # turn
-                gr.update(value=thinking_text),        # thinking
-                gr.update(value=white_hp),             # white health
-                gr.update(value=black_hp),             # black health
-                gr.update(value=popup_html, visible=True),
+                GAME.board.get_turn().title(),                 # turn (capitalized)
+                gr.update(value=thinking_text),                 # thinking
+                gr.update(value=white_hp),                      # white health
+                gr.update(value=black_hp),                      # black health
+                gr.update(value=popup_html, visible=True),      # jester popup
             ] + clear_prompt_displays()
             yield outputs
-            
-            # Keep jester visible for 5s
             await asyncio.sleep(5)
             yield (
                 [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
                 + [gr.update(visible=False)]           # hide jester
                 + clear_prompt_displays()
             )
-            
-            # Check if the next turn is also an agent's turn
             next_turn = GAME.board.get_turn()
             if (next_turn == "white" and WHITE_AGENT is not None) or (next_turn == "black" and BLACK_AGENT is not None):
-                # If it's agent vs agent, add a small delay between moves
                 if CURRENT_GAME_MODE == GameMode.AGENT_VS_AGENT:
                     await asyncio.sleep(2)
-                
-                # Trigger the next agent move
-                next_agent = WHITE_AGENT if next_turn == "white" else BLACK_AGENT
-                if next_agent:
-                    async for result in agent_move():
-                        yield result
+                async for result in agent_move():
+                    yield result
 
 
 async def make_move():
-    """Handle human move or trigger agent move if it's an agent's turn"""
     current_turn = GAME.board.get_turn()
-    
-    # Clear the instruction and fraction displays
     prompt_clears = clear_prompt_displays()
-    
-    # Check if it's an agent's turn
     if (current_turn == "white" and WHITE_AGENT is not None) or (current_turn == "black" and BLACK_AGENT is not None):
         async for result in agent_move():
             yield result
         return
-        
-    # Human move logic
     thinking_text = ""
     async for kind, payload in GAME.decide_move():
-        # ───────── live-streamed "thinking" lines ──────────
         if kind in ("debate", "status"):
             thinking_text += payload + "\n"
             dummy_updates = [gr.update()] * 64
@@ -308,54 +276,42 @@ async def make_move():
                 gr.update(),                          # black health
                 gr.update(),                          # jester slot
             ] + prompt_clears
-
-        # ───────── King finally chose a move ──────────
         elif kind == "move":
             move = payload
             GAME.board.apply_move(move)
-
             white_hp, black_hp = GAME.get_health_scores()
-            jester             = await GAME.get_jester_comment()
-
+            jester = await GAME.get_jester_comment()
             popup_body = (
                 f"<div>"
                 f"🃏 <b>{jester.joke_output}</b><br/>"
                 f"<i>{jester.judgement.value.title()}</i>"
                 f"</div>"
             )
-            # random position (10–80 vh, 5–70 vw)
             top_vh, left_vw = random.randint(10, 80), random.randint(5, 70)
             popup_html = (
-                f'<div class="jester-popup" '
-                f'style="top:{top_vh}vh; left:{left_vw}vw;">'
+                f'<div class="jester-popup" style="top:{top_vh}vh; left:{left_vw}vw;">'
                 f"{popup_body}</div>"
             )
-
             board_updates = []
             for r in range(8):
                 for c in range(7, -1, -1):
                     board_updates.append(
                         gr.update(**get_cell_properties(r, c, GAME.board.piece_at(c, r)))
                     )
-
             outputs = board_updates + [
-                GAME.board.get_turn(),                 # turn
-                gr.update(value=thinking_text),        # thinking
-                gr.update(value=white_hp),             # white health
-                gr.update(value=black_hp),             # black health
-                gr.update(value=popup_html, visible=True),
+                GAME.board.get_turn().title(),                 # turn (capitalized)
+                gr.update(value=thinking_text),                 # thinking
+                gr.update(value=white_hp),                      # white health
+                gr.update(value=black_hp),                      # black health
+                gr.update(value=popup_html, visible=True),      # jester popup
             ] + prompt_clears
             yield outputs
-
-            # keep it visible 5 s
             await asyncio.sleep(5)
             yield (
                 [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
                 + [gr.update(visible=False)]           # hide jester
                 + prompt_clears
             )
-            
-            # If the next turn is an agent's turn, trigger it
             next_turn = GAME.board.get_turn()
             if (next_turn == "white" and WHITE_AGENT is not None) or (next_turn == "black" and BLACK_AGENT is not None):
                 async for result in agent_move():
@@ -364,8 +320,7 @@ async def make_move():
 
 def choose_piece(row, col):
     if GAME is None:
-        return [gr.update()] * (3 + 64)  # Return empty updates if game not initialized
-        
+        return [gr.update()] * (3 + 64)
     piece = GAME.board.piece_at(7 - col, row)
     assert piece is not None
     piece_name = SHORT_PIECE_MAP[piece.lower()]
@@ -449,10 +404,29 @@ def make_board(selected_piece, prompt_img, prompt):
 
 def main():
     with gr.Blocks(css=CSS) as demo:
+        # Title
+        gr.Markdown("<h1 style='text-align:center; font-size:60px;'>Prompt Chess</h1>")
+
+        # Ruleset Section (as numbered list)
+        gr.Markdown(
+    """
+**Ruleset**
+1. After picking from a list of available Game Modes, the game begins  
+2. In Human vs Agent/Agent vs Agent, each agent decides its behaviour from aggressive, defensive, and balanced each turn  
+3. Players take turns trying to influence their LLM-Ruled Agentic Factions via Prompt Injections, trying to influence the King to make the best decision  
+4. After a prompt is written, and **Make move** is clicked (red out-glow), the user sees the Factions debate and final King reasoning and decision  
+5. The game continues in turns until either a pre-set number of turns passes, or a checkmate is achieved  
+6. Losing a Chess Piece costs health, different pieces have different associated health loss  
+7. The winner is decided via final Health score, with the highest being the winner  
+
+Be careful! The King might have a preference towards certain factions, and each faction might have different goals in mind! Check the legend below for more details.
+""",
+    elem_classes=["ruleset-list"]
+)
+
+
         selected_piece = gr.State(None)
-        
-        gr.Markdown("### Prompt Chess")
-        
+
         # Game Mode Selection
         with gr.Row():
             game_mode_dropdown = gr.Dropdown(
@@ -462,23 +436,23 @@ def main():
                 elem_classes=["mode-selector"]
             )
             start_game_button = gr.Button("Start Game")
-        
+
         with gr.Row():
             with gr.Column(scale=1):
                 with gr.Row():
                     with gr.Column(scale=0):
                         prompt_img = gr.Textbox(
-                            label="Fraction", interactive=False, elem_classes=["figure-img"]
+                            label="Faction", interactive=False, elem_classes=["figure-img"]
                         )
                     with gr.Column(scale=1):
                         with gr.Row():
                             turn = gr.Textbox(
                                 label="Turn",
-                                value="",  # Will be set on game initialization
+                                value="",
                                 interactive=False,
                             )
                         with gr.Row():
-                            prompt = gr.Textbox(label="Instructions", interactive=True)
+                            prompt = gr.Textbox(label="Court Advice to Faction", interactive=True)
                             prompt.change(
                                 fn=save_prompt,
                                 inputs=[prompt, selected_piece],
@@ -490,7 +464,7 @@ def main():
                 with gr.Row():
                     thinking = gr.Markdown(label="Thinking…")
                 with gr.Row():
-                    jester_box = gr.Markdown("", visible=False)  # visibility toggled by make_move
+                    jester_box = gr.Markdown("", visible=False)
 
             with gr.Column(min_width=760, scale=0):
                 with gr.Row():
@@ -505,7 +479,7 @@ def main():
                 outputs=chess_board + [turn, thinking, health_white, health_black, jester_box],
                 queue=True
             )
-            
+
             # Make move button
             move.click(
                 fn=make_move,
@@ -520,6 +494,48 @@ def main():
                 ],
                 queue=True,
             )
+
+        # Faction Legend (larger font for symbols)
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("## Faction Legend")
+                gr.Markdown(
+                    """
+<div style="font-size:16px;">
+<table style="width:100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width:100px;">
+    <col style="width:150px;">
+    <col style="width:100px;">
+    <col style="width:auto;">
+  </colgroup>
+  <thead>
+    <tr><th>Symbol</th><th>Faction</th><th>Health Loss</th><th>Behaviour</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="legend-symbol">♟</td><td>Pawn</td><td>1</td><td>Simple-minded but earnest and eager for valor, loyal to higher ranks, look up to Knights and Rooks for guidance, form close camaraderie with each other, address sovereigns with awe, resent enemy pawns that block their advance.</td>
+    </tr>
+    <tr>
+      <td class="legend-symbol">♞</td><td>Knight</td><td>3</td><td>Bold, adventurous, and slightly boastful, delights in playful banter and heroic tales, protects Pawns as “little brothers,” enjoys friendly rivalry with fellow Knights, teams up with Bishops’ wisdom, pledges absolute fealty to both King and Queen.</td>
+    </tr>
+    <tr>
+      <td class="legend-symbol">♝</td><td>Bishop</td><td>3</td><td>Watchful, contemplative, and subtly shrewd advisor who speaks little but observes much, guided by duty to a higher cause, offers calm counsel to the King, coordinates stratagems with the Queen, values Knights’ mobility, keeps a wary distance from his opposing counterpart.</td>
+    </tr>
+    <tr>
+      <td class="legend-symbol">♜</td><td>Rook</td><td>5</td><td>Stoic, disciplined, and slow to anger, sees the board as walls and corridors to police, speaks only in short, weighty statements, shields the King, cooperates closely with fellow Rook, provides backbone for advancing Pawns, distrusts Queen’s reckless opening of files.</td>
+    </tr>
+    <tr>
+      <td class="legend-symbol">♛</td><td>Queen</td><td>9</td><td>Decisive, strategic, and commanding, balances charisma with strict authority, values every piece’s role, demands instant obedience from Pawns, employs Knights for swift strikes, relies on Bishops’ foresight, partners warmly with King, regards opposing Queen as true equal and rival.</td>
+    </tr>
+    <tr>
+      <td class="legend-symbol">♚</td><td>King</td><td>N/A (Game Over)</td><td>Cautious and measured, bears the realm’s burden, values survival over personal glory, grants quiet encouragement to loyal subjects, trusts Rooks to fortify his position, heeds Bishops’ guidance, admires Knights’ valor, honors Pawns’ sacrifices, relies on Queen as chief defender and strategist.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+"""
+                )
 
     demo.queue()
     demo.launch()
