@@ -2,53 +2,85 @@ import gradio as gr
 from functools import partial
 
 from .game_state import GameState, SHORT_PIECE_MAP
-from .visualize import visualize
+
+
+PIECES = {
+    'p': '♟', 'r': '♜', 'b': '♝',
+    'q': '♛', 'k': '♚', 'n': '♞',
+}
 
 CSS = """
-.cell-button {
+.cell {
     width: 70px !important;
     height: 70px !important;
     font-size: 48px !important;
     padding: 0 !important;
 }
+.cell-white-fg {
+    color: #DDDDDD;
+}
+.cell-white-bg {
+    background-color: #BBBBA0;
+}
+.cell-black-fg {
+    color: #111111;
+}
+.cell-black-bg {
+    background-color: #769455;
+}
+
 .figure-img textarea {
     font-size: 128px !important;
     text-align: center;
 }
 """
 
+
 GAME = GameState()
+
+
+def get_cell_properties(rank: int, file: int, piece: str | None) -> dict:
+    classes = ["cell", ["cell-black-bg", "cell-white-bg"][(file + rank) % 2]]
+    if piece is not None:
+        classes.append("cell-black-fg" if piece.islower() else "cell-white-fg")
+
+    interactive = (
+        piece is not None
+        and (
+            GAME.board.get_turn() == "white" and piece.isupper()
+            or GAME.board.get_turn() == "black" and piece.islower()
+        )
+    )
+
+    properties = {
+        "value": PIECES[piece.lower()] if piece is not None else '',
+        "interactive": interactive,
+        "elem_classes": classes,
+    }
+    return properties
+
 
 async def random_move():
     move = await GAME.decide_move()
     GAME.board.apply_move(move)
 
     updates = []
-    for r in range(8):
-        for c in range(7, -1, -1):
-            piece = GAME.board.piece_at(c, r)
-            
-            check_active = False
-            if piece is not None:
-                if GAME.board.get_turn() == 'white':
-                    check_active = piece.isupper()
-                else:
-                    check_active = piece.islower()
-            
-            updates.append(
-                gr.update(
-                    value=visualize(piece),
-                    interactive=check_active
-                )
-            )
+    for rank in range(8):
+        for file in range(7, -1, -1):
+            piece = GAME.board.piece_at(file, rank)
+            updates.append(gr.update(**get_cell_properties(rank, file, piece)))
     updates.append(GAME.board.get_turn())
     return updates
 
+
 def choose_piece(row, col):
-    piece_name = SHORT_PIECE_MAP[GAME.board.piece_at(7-col, row).lower()]
+    piece = GAME.board.piece_at(7-col, row)
+    assert piece is not None
+    piece_name = SHORT_PIECE_MAP[piece.lower()]
     turn = GAME.board.get_turn()
     prompt = GAME.get_fraction_user_prompt(turn, piece_name)
-    return [visualize(GAME.board.piece_at(7-col, row)), prompt, piece_name]
+    return [PIECES[piece], prompt, piece_name]
+
 
 def save_prompt(
     new_prompt: str,
@@ -63,16 +95,11 @@ def save_prompt(
 def make_board(selected_piece, prompt_img, prompt):
     buttons = []
     with gr.Row() as chess_board:
-        for col in range(8):
+        for file in range(8):
             with gr.Column(min_width=70, scale=0): 
-                for row in range(7, -1, -1):
-                    piece = GAME.board.piece_at(row, col)
-                    b = gr.Button(
-                        value=visualize(piece),
-                        interactive=piece is not None and piece.isupper(),
-                        elem_classes=["cell-button"]
-                    )
-                    buttons.append(b)
+                for rank in range(7, -1, -1):
+                    piece = GAME.board.piece_at(rank, file)
+                    buttons.append(gr.Button(**get_cell_properties(rank, file, piece)))
 
     for idx, btn in enumerate(buttons):
         r, c = divmod(idx, 8)
