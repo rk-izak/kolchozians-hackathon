@@ -1,5 +1,5 @@
 import asyncio
-import random                                           # ← NEW
+import random
 import gradio as gr
 from functools import partial
 
@@ -51,6 +51,10 @@ button.cell:disabled,
   box-shadow: 0 6px 14px rgba(0,0,0,.45);
   z-index: 1000;
 }
+
+/* —— Health-bar colours —— */
+.health-white .gr-slider__bar { background:#dddddd; }
+.health-black .gr-slider__bar { background:#222222; }
 """
 
 GAME = GameState()
@@ -82,22 +86,25 @@ def get_cell_properties(rank: int, file: int, piece: str | None, selected_piece:
 async def make_move():
     thinking_text = ""
     async for kind, payload in GAME.decide_move():
+        # ───────── live-streamed “thinking” lines ──────────
         if kind in ("debate", "status"):
             thinking_text += payload + "\n"
             dummy_updates = [gr.update()] * 64
             yield dummy_updates + [
                 gr.update(),                          # turn
                 gr.update(value=thinking_text),       # thinking
-                gr.update(),                          # eval slider
+                gr.update(),                          # white health
+                gr.update(),                          # black health
                 gr.update(),                          # jester slot
             ]
 
+        # ───────── King finally chose a move ──────────
         elif kind == "move":
             move = payload
             GAME.board.apply_move(move)
 
-            evaluation = await GAME.evaluate_board()
-            jester     = await GAME.get_jester_comment()
+            white_hp, black_hp = GAME.get_health_scores()
+            jester             = await GAME.get_jester_comment()
 
             popup_body = (
                 f"<div>"
@@ -105,10 +112,8 @@ async def make_move():
                 f"<i>{jester.judgement.value.title()}</i>"
                 f"</div>"
             )
-
             # random position (10–80 vh, 5–70 vw)
-            top_vh  = random.randint(10, 80)
-            left_vw = random.randint(5, 70)
+            top_vh, left_vw = random.randint(10, 80), random.randint(5, 70)
             popup_html = (
                 f'<div class="jester-popup" '
                 f'style="top:{top_vh}vh; left:{left_vw}vw;">'
@@ -122,22 +127,20 @@ async def make_move():
                         gr.update(**get_cell_properties(r, c, GAME.board.piece_at(c, r)))
                     )
 
-            outputs = (
-                board_updates
-                + [
-                    GAME.board.get_turn(),             # turn
-                    gr.update(value=thinking_text),    # thinking
-                    evaluation,                        # slider
-                    gr.update(value=popup_html, visible=True),
-                ]
-            )
+            outputs = board_updates + [
+                GAME.board.get_turn(),                 # turn
+                gr.update(value=thinking_text),        # thinking
+                gr.update(value=white_hp),             # white health
+                gr.update(value=black_hp),             # black health
+                gr.update(value=popup_html, visible=True),
+            ]
             yield outputs
 
             # keep it visible 5 s
             await asyncio.sleep(5)
             yield (
-                [gr.update()] * (64 + 3)               # board + turn + thinking + slider unchanged
-                + [gr.update(visible=False)]
+                [gr.update()] * (64 + 4)               # board + turn + thinking + 2 bars
+                + [gr.update(visible=False)]           # hide jester
             )
 
 
@@ -175,14 +178,23 @@ def make_board(selected_piece, prompt_img, prompt):
     buttons = []
     with gr.Column():
         with gr.Row():
-            thermo = gr.Slider(
-                minimum=-10,
-                maximum=10,
-                step=0.1,
-                value=0,
+            health_white = gr.Slider(
+                minimum=0,
+                maximum=49,
+                step=1,
+                value=49,
                 interactive=False,
-                label="evaluation",
-                elem_classes=["thermo"],
+                label="White health",
+                elem_classes=["thermo", "health-white"],
+            )
+            health_black = gr.Slider(
+                minimum=0,
+                maximum=49,
+                step=1,
+                value=49,
+                interactive=False,
+                label="Black health",
+                elem_classes=["thermo", "health-black"],
             )
         with gr.Row() as chess_board:
             with gr.Column(min_width=24, scale=0):
@@ -207,7 +219,7 @@ def make_board(selected_piece, prompt_img, prompt):
             outputs=[prompt_img, prompt, selected_piece] + buttons,
             queue=False,
         )
-    return buttons, thermo
+    return buttons, health_white, health_black
 
 
 def main():
@@ -239,19 +251,25 @@ def main():
                         with gr.Row():
                             move = gr.Button(value="Make move")
                 with gr.Row():
-                    thinking = gr.Markdown(label="Thinking...")
+                    thinking = gr.Markdown(label="Thinking…")
                 with gr.Row():
-                    jester_box = gr.Markdown(
-                        "", visible=False  # visibility toggled by make_move
-                    )
+                    jester_box = gr.Markdown("", visible=False)  # visibility toggled by make_move
 
             with gr.Column(min_width=760, scale=0):
                 with gr.Row():
-                    chess_board, thermo = make_board(selected_piece, prompt_img, prompt)
+                    chess_board, health_white, health_black = make_board(
+                        selected_piece, prompt_img, prompt
+                    )
 
             move.click(
                 fn=make_move,
-                outputs=chess_board + [turn, thinking, thermo, jester_box],
+                outputs=chess_board + [
+                    turn,
+                    thinking,
+                    health_white,
+                    health_black,
+                    jester_box,
+                ],
                 queue=True,
             )
 
