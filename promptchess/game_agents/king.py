@@ -9,7 +9,7 @@ class KingState(BaseModel):
 
 class KingPiece:
     def __init__(self, model, behaviour_file):
-        with open(behaviour_file, "r") as f:
+        with open(behaviour_file, "r", encoding="utf8") as f:
             self.behaviour = f.readlines()
 
         self.prompt = (

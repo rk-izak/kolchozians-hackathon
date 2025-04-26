@@ -10,7 +10,7 @@ class ChessFaction:
     def __init__(self, model, piece_name, colour, behaviour_file, user_prompt='',):
         self.name = piece_name
         self.agent = None
-        with open(behaviour_file, "r") as f:
+        with open(behaviour_file, "r", encoding="utf8") as f:
             self.behaviour = f.readlines()
     
         self.update_prompt(colour, piece_name, user_prompt)
