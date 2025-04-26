@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Dict, Optional
 
-import chess
 from agents import Agent, Runner
 from pydantic import BaseModel, Field
 
-from ..chessboard import PIECE_COLOURS, ChessBoard
+from ..game_state import PIECE_COLOURS
+from ..chessboard import ChessBoard
 from ..utils import log_error, log_info, log_warning
 
 
@@ -103,7 +103,6 @@ class PromptAgent:
         log_info(f"PromptAgent ({self.color}) deciding single prompt update...")
         board_fen = board.get_fen()
         board_2d = board.get_board_2d_string()
-        turn_color_str = "white" if board.get_turn_color() == chess.WHITE else "black"
         active_pieces_map = board.get_active_pieces().get(self.color, {})
         active_piece_types = [ptype for ptype, is_active in active_pieces_map.items() if is_active]
 
@@ -116,7 +115,7 @@ class PromptAgent:
 
         # Format the input for the LLM agent
         agent_input = (
-            f"Current Turn: {turn_color_str}\n\n"
+            f"Current Turn: {self.color}\n\n"
             f"Board State:\nFEN: {board_fen}\n{board_2d}\n\n"
             f"Active {self.color} Pieces: {', '.join(active_piece_types)}\n\n"
             f"Current {self.color} Prompts:\n" +
