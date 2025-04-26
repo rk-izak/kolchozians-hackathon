@@ -2,10 +2,10 @@ import chess                                     # Need chess constants like che
 from pathlib import Path
 
 from .chessboard import ChessBoard
-from .game_agents.evaluator import Evaluator
+# from .game_agents.evaluator import Evaluator          # ← removed
 from .game_agents.chessfraction import ChessFaction
 from .game_agents.king import KingPiece
-from .game_agents.jester import ChessJester                        
+from .game_agents.jester import ChessJester
 from .utils import log_info, log_warning, log_error
 
 
@@ -14,6 +14,18 @@ SMART_MODEL = "o3-2025-04-16"
 BALANCED_MODEL = "gpt-4.1-2025-04-14"
 EFFICIENT_MODEL = "o4-mini-2025-04-16"
 SMALL_MODEL = "gpt-4.1-nano-2025-04-14"
+
+# ───── Piece values for “health” ───────────────────────
+# (maximum material for one side = 49)
+PIECE_VALUE = {
+    chess.PAWN:   1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK:   5,
+    chess.QUEEN:  9,
+    chess.KING:  10,
+}
+
 # Map lowercase piece names to python-chess piece types
 PIECE_TYPE_MAP = {
     'pawn': chess.PAWN,
@@ -54,7 +66,7 @@ class GameState:
         self.fractions = self._initialize_fractions(white_user_prompt, black_user_prompt)
         self.kings     = self._initialize_kings()
         self.jester    = ChessJester(model=SMALL_MODEL)
-        self.evaluator = Evaluator(model=BALANCED_MODEL)
+        # self.evaluator = Evaluator(model=BALANCED_MODEL)     # ← removed
 
         self._update_fraction_status()       # initialise active/inactive flags
         log_info("GameState initialized.")
@@ -69,6 +81,26 @@ class GameState:
             self.board.get_board_2d_string(),
         )
 
+    # ─────────────── Health helpers ────────────────
+    def _side_health(self, colour: bool) -> int:
+        """Material total for one colour (True=white, False=black)."""
+        return sum(
+            PIECE_VALUE[piece.piece_type]
+            for piece in self.board._board.piece_map().values()
+            if piece.color == colour
+        )
+
+    def get_health_scores(self) -> tuple[int, int]:
+        """Return (white, black) health based on current board."""
+        return self._side_health(chess.WHITE), self._side_health(chess.BLACK)
+
+    # keep the interface of evaluate_board, but base it on health diff
+    async def evaluate_board(self):
+        white_hp, black_hp = self.get_health_scores()
+        evaluation = white_hp - black_hp           # positive = White ahead
+        evaluation = max(-10, min(10, evaluation)) # clamp to old range
+        return evaluation
+
     def _initialize_fractions(self, white_user_prompt: str, black_user_prompt: str) -> dict:
         """Initializes ChessFraction agents, storing them with an 'is_active' flag."""
         log_info("Initializing fractions…")
@@ -79,7 +111,7 @@ class GameState:
             for piece_key in FRACTION_PIECE_TYPES:
                 fraction_name = f"{color_name}_{piece_key}"
                 agent = ChessFaction(
-                    model=EFFICIENT_MODEL,
+                    model=SMALL_MODEL,
                     piece_name=piece_key.capitalize(),
                     colour=color_name,
                     user_prompt=user_prompt,
@@ -249,8 +281,6 @@ class GameState:
         debate_lines = []
         active_fractions = self.get_active_fractions()
 
-        # if get_fraction_suggestions() already does everything at once,
-        # replace the `for`-loop by your existing call and yield once.
         for frac in active_fractions:
             try:
                 sugg = await frac.suggest_move(self.board)
@@ -302,17 +332,6 @@ class GameState:
             log_warning(f"Move {move_san} failed: {message}")
         return success, message
 
-    async def evaluate_board(self):
-        evaluation = await self.evaluator.call(
-            self.get_board_state(),
-            self.board.get_board_2d_string(),
-        )
-        evaluation = int(evaluation.eval)
-        evaluation = min(evaluation, 10)
-        evaluation = max(evaluation, -10)
-        evaluation = round(evaluation, 1)
-        return evaluation
-
     def is_game_over(self) -> bool:
         """Checks if the game has ended."""
         return self.board.is_game_over()
@@ -332,7 +351,10 @@ async def main():
     max_turns = 100 # Add a max turn limit to prevent infinite loops
     while not game.is_game_over() and turn_count <= max_turns:
         print(f"\n--- {game.get_current_turn().upper()}'S TURN ({turn_count}) ---")
-        chosen_move = await game.decide_move()
+        chosen_move = None
+        async for kind, payload in game.decide_move():
+            if kind == "move":
+                chosen_move = payload
 
         if chosen_move:
             print(f"Chosen move: {chosen_move}")
@@ -359,11 +381,9 @@ async def main():
                     print("Check!")
             else:
                 print(f"!!! Failed to apply move '{chosen_move}': {message} !!!")
-                # This indicates a bug either in King's choice or legal move generation
                 break
         else:
             print("!!! Could not decide on a move. Stopping game. !!!")
-            # This indicates a problem getting suggestions or with the King agent
             break
         turn_count += 1
 
